@@ -8,7 +8,7 @@ This project explores a novel way to merge concepts from automata theory with ne
 
 ## 📄 Paper
 
-The detailed explanation of the model, theoretical background, performance analysis, and comparisons to digital logic systems can be found in [`Moore_Machine_on_Hopfield.pdf`](./Moore_Machine_on_Hopfield.pdf).
+The detailed explanation of the model, theoretical background, performance analysis, and comparisons to digital logic systems can be found in the draft [`Moore_Machine_on_Hopfield.pdf`](./Moore_Machine_on_Hopfield.pdf) or poster [`Split hopfield.pdf`](./Split%20hopfield.pdf).
 
 ## 🔄 State Transitions
 
