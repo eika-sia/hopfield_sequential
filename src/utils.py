@@ -3,7 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 # Type aliases for clarity
-MintermDict = dict[str, NDArray[np.integer]]
+MintermDict = Dict[str, NDArray[np.integer]]
 WeightDict = Dict[str, NDArray[np.floating]]
 TransitionDict = List[Tuple[str, str]]
 
@@ -85,19 +85,20 @@ def _calculate_state_thresholds(minterms: List[MintermDict], num_minterms: int, 
     """
     Calculate state layer thresholds.
     
-    Note: The current logic sums all OTHER minterm outputs and divides by -n.
-    This may need review for the specific application.
+    Note: Thresholds are set for apical transitions only. With the current minterm logic, the apical transition will look like output = state_c - sum(state_i) - offset. Here state_c is the wanted state from minterm_c while the sum is over all other minterms. If we want to have just the wanted state we want offset = - sum(state_i). This would work for a specific state_c perfectly. Since we are dealing with random vectors we can assume that the average offset for every wanted state will work for every computation. Therefore we calculated every offset_c and average them.
     """
     state_thresholds = np.zeros(state_size)
     
     # Sum contributions from all other minterms (unclear why this is needed)
     for i in range(num_minterms):
+        offset_c = np.zeros(state_size)
         for j in range(num_minterms):
             if i != j:
-                state_thresholds += minterms[j]['output_state']
+                offset_c -= minterms[j]['output_state']
+        state_thresholds += offset_c
     
     # Normalize by negative count
-    state_thresholds /= -num_minterms
+    state_thresholds /= num_minterms
     
     return state_thresholds
 
