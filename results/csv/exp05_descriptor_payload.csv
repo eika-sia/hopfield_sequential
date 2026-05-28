@@ -1,0 +1,21 @@
+experiment,seed,case_name,sequence,final_state,expected_state,success,payload_id,descriptor,corruption_rate,num_trials,operation_success_rate,content_success_rate
+exp05_descriptor_payload,0,same_payload_store,STORE payload,STORED,STORED,True,p1,STORE,,,,
+exp05_descriptor_payload,0,same_payload_compare,STORE payload COMPARE payload,COMPARE_TRUE,COMPARE_TRUE,True,p1,COMPARE,,,,
+exp05_descriptor_payload,0,same_descriptor_store_p1,STORE payload,STORED,STORED,True,p1,STORE,,,,
+exp05_descriptor_payload,0,same_descriptor_store_p2,STORE payload,STORED,STORED,True,p2,STORE,,,,
+exp05_descriptor_payload,0,missing_descriptor,payload,ERROR,ERROR,True,p1,,,,,
+exp05_descriptor_payload,0,wrong_content_compare,STORE payload COMPARE payload,COMPARE_FALSE,COMPARE_FALSE,True,p2,COMPARE,,,,
+exp05_descriptor_payload,0,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,0.0,50.0,1.0,1.0
+exp05_descriptor_payload,0,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,0.25,50.0,0.86,0.86
+exp05_descriptor_payload,0,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,0.5,50.0,0.5,0.5
+exp05_descriptor_payload,0,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,1.0,50.0,0.0,0.0
+exp05_descriptor_payload,1,same_payload_store,STORE payload,STORED,STORED,True,p1,STORE,,,,
+exp05_descriptor_payload,1,same_payload_compare,STORE payload COMPARE payload,COMPARE_TRUE,COMPARE_TRUE,True,p1,COMPARE,,,,
+exp05_descriptor_payload,1,same_descriptor_store_p1,STORE payload,STORED,STORED,True,p1,STORE,,,,
+exp05_descriptor_payload,1,same_descriptor_store_p2,STORE payload,STORED,STORED,True,p2,STORE,,,,
+exp05_descriptor_payload,1,missing_descriptor,payload,ERROR,ERROR,True,p1,,,,,
+exp05_descriptor_payload,1,wrong_content_compare,STORE payload COMPARE payload,COMPARE_FALSE,COMPARE_FALSE,True,p2,COMPARE,,,,
+exp05_descriptor_payload,1,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,0.0,50.0,1.0,1.0
+exp05_descriptor_payload,1,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,0.25,50.0,0.8,0.8
+exp05_descriptor_payload,1,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,0.5,50.0,0.54,0.54
+exp05_descriptor_payload,1,descriptor_corruption,STORE payload then corrupted COMPARE payload,,COMPARE_TRUE,,p1,COMPARE,1.0,50.0,0.0,0.0
