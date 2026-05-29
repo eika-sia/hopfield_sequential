@@ -1,0 +1,11 @@
+\begin{tabular}{p{0.18\linewidth} p{0.14\linewidth} p{0.18\linewidth} p{0.22\linewidth} p{0.22\linewidth}}
+\hline
+Experiment & Main metric & Ideal cleanup result & Hopfield/result & Interpretation \\
+\hline
+Exp01 Transition realization & Transition accuracy & nearest mean = 1.000 & Hopfield mean = 0.874; median = 1.000 & Exact transition works; recurrent cleanup is capacity-limited. \\
+Exp02 Noise recovery & Recovery accuracy & nearest mean = 0.967 & Hopfield mean = 0.699; zero-noise mean = 0.844 & Basin recovery appears, but recurrent cleanup degrades under load/noise. \\
+Exp03 Capacity & Recovery accuracy & nearest mean = 1.000 & Hopfield at m/n=0.138: 0.985; at m/n=1: 0.466 & Capacity-ratio limits motivate modular finite-state composition. \\
+Exp04 Sparse transitions & Sparse transition accuracy & nearest random-noise at 0.3: 0.982; at 0.5: 1.000 & Hopfield random-noise at 0.3: 0.762; at 0.5: 0.906 & Partial writes can target basins; keep-current exposes old-state inertia. \\
+Exp05 Descriptor/payload & Protocol-case success & case success = 1.000 & Executable witness, not a performance benchmark. & Descriptors select operations independently of payload content. \\
+\hline
+\end{tabular}

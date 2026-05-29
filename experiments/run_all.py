@@ -16,9 +16,16 @@ from experiments import (
 def main() -> None:
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--quick", action="store_true", help="Run reduced settings in under a minute.")
+    mode.add_argument(
+        "--quick", action="store_true", help="Run reduced settings in under a minute."
+    )
     mode.add_argument("--full", action="store_true", help="Run publication settings.")
-    parser.add_argument("--jobs", type=int, default=1, help="Worker threads per experiment; 0 uses all CPUs.")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="Worker processes per experiment; 0 uses all CPUs.",
+    )
     args = parser.parse_args()
     quick = not args.full
 

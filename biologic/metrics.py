@@ -2,9 +2,25 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
 import numpy as np
 
 from biologic.fsm import FiniteStateMachine
+
+
+class Transition(Protocol):
+    def propose(
+        self, current_state_vec: np.ndarray, input_vec: np.ndarray
+    ) -> np.ndarray:
+        """Return a proposed next state vector."""
+        ...
+
+
+class Register(Protocol):
+    def cleanup(self, x: np.ndarray) -> tuple[int, np.ndarray]:
+        """Return the closest state index and cleaned vector."""
+        ...
 
 
 def hamming_distance(x: np.ndarray, y: np.ndarray) -> int:
@@ -44,8 +60,8 @@ def corrupt_vector(
 
 def transition_accuracy(
     fsm: FiniteStateMachine,
-    transition,
-    register,
+    transition: Transition,
+    register: Register,
     state_codebook: np.ndarray,
     input_codebook: np.ndarray,
 ) -> float:
@@ -53,7 +69,9 @@ def transition_accuracy(
     correct = 0
     total = 0
     for state_idx, input_idx, target_idx in fsm.all_transitions():
-        proposal = transition.propose(state_codebook[state_idx], input_codebook[input_idx])
+        proposal = transition.propose(
+            state_codebook[state_idx], input_codebook[input_idx]
+        )
         recovered_idx, _ = register.cleanup(proposal)
         correct += int(recovered_idx == target_idx)
         total += 1
@@ -61,7 +79,7 @@ def transition_accuracy(
 
 
 def recovery_accuracy(
-    register,
+    register: Register,
     codebook: np.ndarray,
     flip_fraction: float,
     trials_per_state: int,
@@ -82,11 +100,13 @@ def recovery_accuracy(
 
 
 def sparse_transition_accuracy(
-    fsm,
-    transition,
-    register,
-    state_codebook,
-    input_codebook,
+    fsm: FiniteStateMachine,
+    transition: Transition,
+    register: Register,
+    state_codebook: np.ndarray,
+    input_codebook: np.ndarray,
 ) -> float:
     """Evaluate a sparse transition object with cleanup."""
-    return transition_accuracy(fsm, transition, register, state_codebook, input_codebook)
+    return transition_accuracy(
+        fsm, transition, register, state_codebook, input_codebook
+    )

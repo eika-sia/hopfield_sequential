@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing.context import BaseContext
 from pathlib import Path
 from typing import Callable, Iterable, TypeVar
 
+import numpy as np
 import pandas as pd
 
 from biologic.register import HopfieldRegister, NearestAttractorRegister
 
-CSV_DIR = Path("results/csv")
-FIGURE_DIR = Path("results/figures")
+CSV_DIR: Path = Path("results/csv")
+FIGURE_DIR: Path = Path("results/figures")
 T = TypeVar("T")
 U = TypeVar("U")
 
@@ -22,7 +25,9 @@ def ensure_output_dirs() -> None:
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def make_register(register_type: str, codebook):
+def make_register(
+    register_type: str, codebook: np.ndarray
+) -> NearestAttractorRegister | HopfieldRegister:
     if register_type == "nearest":
         return NearestAttractorRegister(codebook)
     if register_type == "hopfield":
@@ -57,10 +62,15 @@ def parallel_map(
     items: Iterable[T],
     jobs: int | None = 1,
 ) -> list[U]:
-    """Map ``func`` over items, using threads when jobs > 1."""
-    item_list = list(items)
-    resolved_jobs = resolve_jobs(jobs)
+    """Map ``func`` over items, using worker processes when jobs > 1."""
+    item_list: list[T] = list(items)
+    resolved_jobs: int = resolve_jobs(jobs)
     if resolved_jobs == 1 or len(item_list) <= 1:
         return [func(item) for item in item_list]
-    with ThreadPoolExecutor(max_workers=resolved_jobs) as executor:
-        return list(executor.map(func, item_list))
+
+    context: BaseContext | None = (
+        mp.get_context("fork") if "fork" in mp.get_all_start_methods() else None
+    )
+    chunksize: int = max(1, len(item_list) // (resolved_jobs * 4))
+    with ProcessPoolExecutor(max_workers=resolved_jobs, mp_context=context) as executor:
+        return list(executor.map(func, item_list, chunksize=chunksize))

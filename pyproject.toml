@@ -16,7 +16,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = [
+    "pandas-stubs",
+    "pytest",
+]
 
 [tool.setuptools.packages.find]
 include = ["biologic*", "experiments*", "scripts*"]

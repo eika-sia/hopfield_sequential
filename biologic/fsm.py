@@ -20,7 +20,9 @@ class FiniteStateMachine:
     def __post_init__(self) -> None:
         table = np.asarray(self.transition_table, dtype=int)
         if table.shape != (self.num_states, self.num_inputs):
-            raise ValueError("transition_table must have shape (num_states, num_inputs)")
+            raise ValueError(
+                "transition_table must have shape (num_states, num_inputs)"
+            )
         if np.any(table < 0) or np.any(table >= self.num_states):
             raise ValueError("transition_table contains invalid state indices")
         object.__setattr__(self, "transition_table", table)

@@ -5,7 +5,7 @@ from biologic.metrics import corrupt_vector
 from biologic.register import HopfieldRegister, NearestAttractorRegister
 
 
-def test_nearest_register_recovers_exact_vectors():
+def test_nearest_register_recovers_exact_vectors() -> None:
     rng = np.random.default_rng(0)
     codebook = random_state_codebook(8, 64, rng)
     register = NearestAttractorRegister(codebook)
@@ -15,7 +15,7 @@ def test_nearest_register_recovers_exact_vectors():
         assert np.array_equal(recovered, state)
 
 
-def test_zero_corruption_recovers_exactly():
+def test_zero_corruption_recovers_exactly() -> None:
     rng = np.random.default_rng(1)
     codebook = random_state_codebook(8, 64, rng)
     register = NearestAttractorRegister(codebook)
@@ -25,7 +25,7 @@ def test_zero_corruption_recovers_exactly():
         assert recovered_idx == idx
 
 
-def test_hopfield_weights_symmetric_and_zero_diagonal():
+def test_hopfield_weights_symmetric_and_zero_diagonal() -> None:
     rng = np.random.default_rng(2)
     codebook = random_state_codebook(6, 32, rng)
     register = HopfieldRegister.from_codebook(codebook)
@@ -33,7 +33,7 @@ def test_hopfield_weights_symmetric_and_zero_diagonal():
     assert np.allclose(np.diag(register.weights), 0.0)
 
 
-def test_hopfield_energy_does_not_increase_under_async_update():
+def test_hopfield_energy_does_not_increase_under_async_update() -> None:
     rng = np.random.default_rng(3)
     codebook = random_state_codebook(4, 32, rng)
     register = HopfieldRegister.from_codebook(codebook)

@@ -52,7 +52,9 @@ class DescriptorPayloadMachine:
             self.stored_payload = payload
             self.state = STORED
         elif self.state == EXPECT_PAYLOAD_COMPARE:
-            if self.stored_payload is not None and np.array_equal(payload, self.stored_payload):
+            if self.stored_payload is not None and np.array_equal(
+                payload, self.stored_payload
+            ):
                 self.state = COMPARE_TRUE
             else:
                 self.state = COMPARE_FALSE
@@ -62,7 +64,7 @@ class DescriptorPayloadMachine:
 
     def run_sequence(self, sequence: list[tuple[str, Any]]) -> list[str]:
         """Run descriptor/payload tokens and return states after each input."""
-        states = []
+        states: list[str] = []
         for kind, value in sequence:
             if kind == "descriptor":
                 states.append(self.feed_descriptor(value))

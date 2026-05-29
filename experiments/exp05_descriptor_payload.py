@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -20,9 +21,13 @@ from biologic.encodings import random_bipolar
 from experiments.common import parallel_map, save_csv
 from scripts.plot_results import plot_descriptor_payload
 
+Sequence = list[tuple[str, object]]
+Row = dict[str, object]
+Condition = tuple[int, list[float], int]
 
-def _sequence_label(sequence: list[tuple[str, object]]) -> str:
-    labels = []
+
+def _sequence_label(sequence: Sequence) -> str:
+    labels: list[str] = []
     for kind, value in sequence:
         if kind == "descriptor":
             labels.append(str(value))
@@ -34,14 +39,14 @@ def _sequence_label(sequence: list[tuple[str, object]]) -> str:
 def _run_case(
     seed: int,
     case_name: str,
-    sequence: list[tuple[str, object]],
+    sequence: Sequence,
     expected_state: str,
     payload_id: str,
     descriptor: str,
-) -> dict[str, object]:
-    machine = DescriptorPayloadMachine()
-    states = machine.run_sequence(sequence)
-    final_state = states[-1]
+) -> Row:
+    machine: DescriptorPayloadMachine = DescriptorPayloadMachine()
+    states: list[str] = machine.run_sequence(sequence)
+    final_state: str = states[-1]
     return {
         "experiment": "exp05_descriptor_payload",
         "seed": seed,
@@ -59,17 +64,23 @@ def _run_case(
     }
 
 
-def _corruption_row(seed: int, corruption_rate: float, num_trials: int, p1: np.ndarray) -> dict[str, object]:
-    rng = np.random.default_rng(seed + int(round(corruption_rate * 10_000)))
-    operation_success = 0
-    content_success = 0
+def _corruption_row(
+    seed: int, corruption_rate: float, num_trials: int, p1: np.ndarray
+) -> Row:
+    rng: np.random.Generator = np.random.default_rng(
+        seed + int(round(corruption_rate * 10_000))
+    )
+    operation_success: int = 0
+    content_success: int = 0
     for _ in range(num_trials):
-        descriptor = COMPARE
+        descriptor: str = COMPARE
         if rng.random() < corruption_rate:
             descriptor = STORE
-        machine = DescriptorPayloadMachine()
+        machine: DescriptorPayloadMachine = DescriptorPayloadMachine()
         machine.run_sequence([("descriptor", STORE), ("payload", p1)])
-        final_state = machine.run_sequence([("descriptor", descriptor), ("payload", p1)])[-1]
+        final_state: str = machine.run_sequence(
+            [("descriptor", descriptor), ("payload", p1)]
+        )[-1]
         operation_success += int(final_state == COMPARE_TRUE)
         content_success += int(final_state == COMPARE_TRUE)
     return {
@@ -89,11 +100,11 @@ def _corruption_row(seed: int, corruption_rate: float, num_trials: int, p1: np.n
     }
 
 
-def _run_seed(args: tuple[int, list[float], int]) -> list[dict[str, object]]:
+def _run_seed(args: Condition) -> list[Row]:
     seed, corruption_rates, num_trials = args
-    rng = np.random.default_rng(seed)
+    rng: np.random.Generator = np.random.default_rng(seed)
     p1, p2, _p3 = random_bipolar((3, 32), rng)
-    rows = [
+    rows: list[Row] = [
         _run_case(
             seed,
             "same_payload_store",
@@ -105,7 +116,12 @@ def _run_seed(args: tuple[int, list[float], int]) -> list[dict[str, object]]:
         _run_case(
             seed,
             "same_payload_compare",
-            [("descriptor", STORE), ("payload", p1), ("descriptor", COMPARE), ("payload", p1)],
+            [
+                ("descriptor", STORE),
+                ("payload", p1),
+                ("descriptor", COMPARE),
+                ("payload", p1),
+            ],
             COMPARE_TRUE,
             "p1",
             COMPARE,
@@ -130,7 +146,12 @@ def _run_seed(args: tuple[int, list[float], int]) -> list[dict[str, object]]:
         _run_case(
             seed,
             "wrong_content_compare",
-            [("descriptor", STORE), ("payload", p1), ("descriptor", COMPARE), ("payload", p2)],
+            [
+                ("descriptor", STORE),
+                ("payload", p1),
+                ("descriptor", COMPARE),
+                ("payload", p2),
+            ],
             COMPARE_FALSE,
             "p2",
             COMPARE,
@@ -142,17 +163,29 @@ def _run_seed(args: tuple[int, list[float], int]) -> list[dict[str, object]]:
 
 
 def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
-    seeds = range(2) if quick else range(10)
-    corruption_rates = [0.0, 0.25, 0.5, 1.0] if quick else [0.0, 0.05, 0.10, 0.20, 0.30, 0.50, 0.75, 1.00]
-    num_trials = 50 if quick else 500
-    conditions = [(seed, corruption_rates, num_trials) for seed in seeds]
-    print(f"Running experiment 5: descriptor/payload separation ({len(conditions)} seeds, jobs={jobs})...")
-    rows = [row for group in parallel_map(_run_seed, conditions, jobs=jobs) for row in group]
+    seeds: range = range(2) if quick else range(10)
+    corruption_rates: list[float] = (
+        [0.0, 0.25, 0.5, 1.0]
+        if quick
+        else [0.0, 0.05, 0.10, 0.20, 0.30, 0.50, 0.75, 1.00]
+    )
+    num_trials: int = 50 if quick else 500
+    conditions: list[Condition] = [
+        (seed, corruption_rates, num_trials) for seed in seeds
+    ]
+    print(
+        f"Running experiment 5: descriptor/payload separation ({len(conditions)} seeds, jobs={jobs})..."
+    )
+    rows: list[Row] = [
+        row for group in parallel_map(_run_seed, conditions, jobs=jobs) for row in group
+    ]
 
-    df = pd.DataFrame(rows)
+    df: pd.DataFrame = pd.DataFrame(rows)
     csv_path = save_csv(df, "exp05_descriptor_payload.csv")
-    figure_paths = plot_descriptor_payload(df)
-    case_success = df[df["case_name"] != "descriptor_corruption"]["success"].mean()
+    figure_paths: list[Path] = plot_descriptor_payload(df)
+    case_success: float = df[df["case_name"] != "descriptor_corruption"][
+        "success"
+    ].mean()
     print(f"Saved CSV to {csv_path}")
     print(f"Saved figures to results/figures ({len(figure_paths)} files)")
     print(f"Summary:\n  mean case success = {case_success:.3f}")
@@ -160,10 +193,12 @@ def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser: argparse.ArgumentParser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true")
-    parser.add_argument("--jobs", type=int, default=1, help="Worker threads; 0 uses all CPUs.")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--jobs", type=int, default=1, help="Worker processes; 0 uses all CPUs."
+    )
+    args: argparse.Namespace = parser.parse_args()
     run_experiment(quick=args.quick, jobs=args.jobs)
 
 

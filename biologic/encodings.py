@@ -10,12 +10,16 @@ def sign(x: np.ndarray) -> np.ndarray:
     return np.where(np.asarray(x) >= 0, 1, -1).astype(int)
 
 
-def random_bipolar(shape, rng: np.random.Generator) -> np.ndarray:
+def random_bipolar(
+    shape: int | tuple[int, ...], rng: np.random.Generator
+) -> np.ndarray:
     """Generate random {-1, +1} array."""
     return rng.choice(np.array([-1, 1], dtype=int), size=shape)
 
 
-def _random_unique_codebook(num_codes: int, dim: int, rng: np.random.Generator) -> np.ndarray:
+def _random_unique_codebook(
+    num_codes: int, dim: int, rng: np.random.Generator
+) -> np.ndarray:
     if dim < 63 and num_codes > 2**dim:
         raise ValueError("num_codes exceeds the number of unique bipolar vectors")
 

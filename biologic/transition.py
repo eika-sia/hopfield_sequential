@@ -23,7 +23,9 @@ class ExactCoordinateTransition:
     state_codebook: np.ndarray
     input_codebook: np.ndarray
 
-    def propose(self, current_state_vec: np.ndarray, input_vec: np.ndarray) -> np.ndarray:
+    def propose(
+        self, current_state_vec: np.ndarray, input_vec: np.ndarray
+    ) -> np.ndarray:
         """Identify current state and input by overlap and return target vector."""
         state_idx = _nearest_index(self.state_codebook, current_state_vec)
         input_idx = _nearest_index(self.input_codebook, input_vec)
@@ -76,7 +78,9 @@ class SparseCoordinateTransition:
             mask[indices] = True
         return mask
 
-    def propose(self, current_state_vec: np.ndarray, input_vec: np.ndarray) -> np.ndarray:
+    def propose(
+        self, current_state_vec: np.ndarray, input_vec: np.ndarray
+    ) -> np.ndarray:
         """Write a fraction of target coordinates and fill the rest by mode."""
         state_idx = _nearest_index(self.state_codebook, current_state_vec)
         input_idx = _nearest_index(self.input_codebook, input_vec)
