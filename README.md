@@ -1,6 +1,6 @@
 # BioLogic State Machine Simulations
 
-This repository contains reproducible simulations for BioLogic-style state machines built from high-dimensional bipolar state vectors. The experiments test exact finite-state transition construction, ideal nearest-attractor cleanup, Hopfield-style recurrent cleanup, sparse partial writes, and a small descriptor/payload protocol witness.
+This repository contains reproducible simulations for BioLogic-style state machines built from high-dimensional bipolar state vectors. The experiments test exact finite-state transition construction, ideal nearest-attractor cleanup, Hopfield-style recurrent cleanup, sparse partial writes, a descriptor/payload protocol witness, and learned transition acquisition from demonstrations.
 
 The code is meant to support paper figures and Results-section numbers. Running the plotting and statistics scripts never reruns experiments; they only read the CSV files already present in `results/csv/`.
 
@@ -30,6 +30,7 @@ The most important core modules are:
 - `biologic/fsm.py`: a small typed finite-state machine abstraction.
 - `biologic/register.py`: nearest-attractor and Hopfield register cleanup.
 - `biologic/transition.py`: exact and sparse transition mechanisms.
+- `biologic/learning.py`: local associative transition learning from state-input demonstrations.
 - `biologic/descriptors.py`: descriptor/payload protocol helpers.
 - `biologic/metrics.py`: shared accuracy and recovery metrics.
 
@@ -44,8 +45,11 @@ The experiment modules are intentionally separate from the core logic. That keep
 | Exp03 | `experiments/exp03_capacity.py` | Sweeps capacity ratio and compares Hopfield behavior to the classical capacity reference. |
 | Exp04 | `experiments/exp04_sparse_transitions.py` | Tests sparse transition writes under `keep_current` and `random_noise` modes. |
 | Exp05 | `experiments/exp05_descriptor_payload.py` | Demonstrates descriptor/payload separation as an executable protocol witness. |
+| Exp06 | `experiments/exp06_learned_transitions.py` | Learns transition associations from demonstrated current-state, input, and next-state examples. |
 
 For Exp04, the two modes should not be averaged together. `keep_current` measures sparse writes against old-state inertia. `random_noise` measures whether partial target writes bias the system into the target basin.
+
+Exp06 uses Interface-Conditioned Eligibility Transition Learning. The learner sees demonstrations of a current state plus input/descriptor followed by an observed next state, then updates pair-to-state weights using a local associative eligibility rule. The learner module does not accept an FSM or transition table; the experiment code uses the FSM only to generate demonstrations and evaluate the learned behavior.
 
 ## Running Tests
 
@@ -68,6 +72,14 @@ python -m experiments.run_all --full --jobs 0
 ```
 
 `--jobs 0` uses all CPUs. Each individual experiment also accepts `--jobs`. The parallelism is process-based because the experiment conditions are independent.
+
+`run_all.py` runs Exp01 through Exp06. Exp06 can also be run directly when iterating on the learned-transition sweep:
+
+```bash
+python -m experiments.run_all --quick --jobs 0
+python -m experiments.exp06_learned_transitions --quick --jobs 0
+python -m experiments.exp06_learned_transitions --full --jobs 0
+```
 
 CSV outputs are written to:
 
@@ -98,7 +110,16 @@ The plotting script also writes:
 results/tables/simulation_summary.tex
 ```
 
-Current paper figure stems are `fig01_*` through `fig07_*`. Older unnumbered `fig_transition_*`, `fig_noise_*`, `fig_capacity_*`, `fig_sparse_*`, and `fig_descriptor_*` files are legacy outputs from an earlier plotting pass.
+Current paper figure stems are `fig01_*` through `fig11_*`. Figures `fig08_*` through `fig11_*` come from Exp06:
+
+```text
+fig08_learned_transition_accuracy
+fig09_pair_layer_capacity
+fig10_learned_sparse_transitions
+fig11_coverage_seen_unseen
+```
+
+Older unnumbered `fig_transition_*`, `fig_noise_*`, `fig_capacity_*`, `fig_sparse_*`, and `fig_descriptor_*` files are legacy outputs from an earlier plotting pass.
 
 ## Generating Statistics
 
@@ -122,6 +143,7 @@ results/statistics/exp02_noise_recovery_summary.csv
 results/statistics/exp03_capacity_summary.csv
 results/statistics/exp04_sparse_transitions_summary.csv
 results/statistics/exp05_descriptor_payload_summary.csv
+results/statistics/exp06_learned_transitions_summary.csv
 results/tables/simulation_statistics_table.tex
 ```
 

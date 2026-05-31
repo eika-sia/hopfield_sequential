@@ -32,6 +32,7 @@ CSV_NAMES: dict[str, str] = {
     "exp03": "exp03_capacity.csv",
     "exp04": "exp04_sparse_transitions.csv",
     "exp05": "exp05_descriptor_payload.csv",
+    "exp06": "exp06_learned_transitions.csv",
 }
 
 
@@ -959,6 +960,24 @@ def _case_success_text(table: pd.DataFrame) -> str:
     return ", ".join(parts) if parts else "n/a"
 
 
+def _max_epoch_df(df: pd.DataFrame) -> pd.DataFrame:
+    epochs = [
+        value
+        for value in (_to_float(row.get("epochs")) for row in _records(df))
+        if value is not None
+    ]
+    if not epochs:
+        return pd.DataFrame()
+    max_epoch = max(epochs)
+    return _filter_rows(
+        df,
+        lambda row: (
+            (epoch := _to_float(row.get("epochs"))) is not None
+            and math.isclose(epoch, max_epoch)
+        ),
+    )
+
+
 def analyze_exp03(csv_dir: Path, out_dir: Path) -> AnalysisResult:
     source = csv_dir / CSV_NAMES["exp03"]
     df = load_csv(source)
@@ -1528,6 +1547,279 @@ def _corruption_summary(df: pd.DataFrame, group_cols: Sequence[str]) -> pd.DataF
     return pd.DataFrame(rows)
 
 
+def analyze_exp06(csv_dir: Path, out_dir: Path) -> AnalysisResult:
+    source = csv_dir / CSV_NAMES["exp06"]
+    df = load_csv(source)
+    result = AnalysisResult("exp06", "Exp06: Learned transitions", df is not None, source)
+    if df is None:
+        return result
+
+    required = [
+        "experiment",
+        "seed",
+        "num_states",
+        "num_inputs",
+        "state_dim",
+        "input_dim",
+        "feature_mode",
+        "feature_dim",
+        "hidden_dim",
+        "training_mode",
+        "coverage_fraction",
+        "epochs",
+        "update_rule",
+        "output_mode",
+        "write_fraction",
+        "unwritten_mode",
+        "register_type",
+        "cleanup_type",
+        "num_training_examples",
+        "seen_transition_accuracy",
+        "unseen_transition_accuracy",
+        "all_transition_accuracy",
+        "raw_bit_accuracy",
+        "raw_overlap_with_target",
+        "basin_margin_mean",
+        "exact_upper_bound_accuracy",
+        "untrained_baseline_accuracy",
+        "mean_abs_overlap",
+        "notes",
+    ]
+    if not _has_required(df, required, "Exp06"):
+        return result
+
+    metric = "all_transition_accuracy"
+    overall = mean_std_min_max(df, ["feature_mode", "register_type"], metric)
+    by_epoch = mean_sem(
+        df,
+        ["feature_mode", "hidden_dim", "register_type", "epochs"],
+        metric,
+    )
+    dense_full = _filter_many(
+        df,
+        {
+            "training_mode": "full_table",
+            "output_mode": "dense",
+            "coverage_fraction": 1.0,
+            "update_rule": "delta",
+        },
+    )
+    max_dense_full = _max_epoch_df(dense_full)
+    hashed_max = _filter_equal(max_dense_full, "feature_mode", "hashed_pair")
+    hashed_by_hidden = mean_sem(
+        hashed_max,
+        ["register_type", "hidden_dim"],
+        metric,
+    )
+    sparse = _filter_many(
+        df,
+        {
+            "feature_mode": "exact_pair",
+            "output_mode": "sparse_topk",
+        },
+    )
+    sparse_max = _max_epoch_df(sparse)
+    sparse_by_write = mean_sem(
+        sparse_max,
+        ["register_type", "unwritten_mode", "write_fraction"],
+        metric,
+    )
+    coverage = _filter_many(
+        df,
+        {
+            "feature_mode": "exact_pair",
+            "training_mode": "coverage_sweep",
+            "output_mode": "dense",
+        },
+    )
+    coverage_max = _max_epoch_df(coverage)
+    coverage_all = mean_sem(
+        coverage_max,
+        ["register_type", "coverage_fraction"],
+        metric,
+    )
+    coverage_seen = mean_sem(
+        coverage_max,
+        ["register_type", "coverage_fraction"],
+        "seen_transition_accuracy",
+    )
+    coverage_unseen = mean_sem(
+        coverage_max,
+        ["register_type", "coverage_fraction"],
+        "unseen_transition_accuracy",
+    )
+
+    summary_path = out_dir / "exp06_learned_transitions_summary.csv"
+    result.summary_path = _write_summary(
+        summary_path,
+        [
+            _summary_frame(overall, "overall_by_feature_mode_register_type"),
+            _summary_frame(by_epoch, "learning_curve_by_feature_mode_hidden_dim_register_type_epoch"),
+            _summary_frame(hashed_by_hidden, "hashed_pair_by_hidden_dim_at_max_epoch"),
+            _summary_frame(sparse_by_write, "sparse_topk_by_write_fraction_at_max_epoch"),
+            _summary_frame(coverage_all, "coverage_all_accuracy_at_max_epoch"),
+            _summary_frame(coverage_seen, "coverage_seen_accuracy_at_max_epoch"),
+            _summary_frame(coverage_unseen, "coverage_unseen_accuracy_at_max_epoch"),
+        ],
+    )
+
+    exact_one = _filter_many(
+        df,
+        {
+            "feature_mode": "exact_pair",
+            "training_mode": "full_table",
+            "output_mode": "dense",
+            "coverage_fraction": 1.0,
+            "epochs": 1,
+            "update_rule": "delta",
+        },
+    )
+    exact_nearest = _mean_for_filters(
+        exact_one,
+        metric,
+        {"register_type": "nearest"},
+    )
+    exact_hopfield = _mean_for_filters(
+        exact_one,
+        metric,
+        {"register_type": "hopfield"},
+    )
+    hidden_nearest_text = _param_value_text(
+        hashed_max,
+        {"register_type": "nearest"},
+        "hidden_dim",
+        metric,
+    )
+    hidden_hopfield_text = _param_value_text(
+        hashed_max,
+        {"register_type": "hopfield"},
+        "hidden_dim",
+        metric,
+    )
+    first_hidden_095 = _first_param_reaching(
+        hashed_max,
+        {"register_type": "nearest"},
+        "hidden_dim",
+        metric,
+        0.95,
+    )
+    sparse_near_030, sparse_near_030_actual = _mean_at(
+        sparse_max,
+        metric,
+        {"register_type": "nearest", "unwritten_mode": "random_noise"},
+        "write_fraction",
+        0.30,
+    )
+    sparse_hop_030, sparse_hop_030_actual = _mean_at(
+        sparse_max,
+        metric,
+        {"register_type": "hopfield", "unwritten_mode": "random_noise"},
+        "write_fraction",
+        0.30,
+    )
+    sparse_near_050, sparse_near_050_actual = _mean_at(
+        sparse_max,
+        metric,
+        {"register_type": "nearest", "unwritten_mode": "random_noise"},
+        "write_fraction",
+        0.50,
+    )
+    sparse_hop_050, sparse_hop_050_actual = _mean_at(
+        sparse_max,
+        metric,
+        {"register_type": "hopfield", "unwritten_mode": "random_noise"},
+        "write_fraction",
+        0.50,
+    )
+    cov_nearest_seen_050, cov_nearest_seen_actual = _mean_at(
+        coverage_max,
+        "seen_transition_accuracy",
+        {"register_type": "nearest"},
+        "coverage_fraction",
+        0.50,
+    )
+    cov_nearest_unseen_050, cov_nearest_unseen_actual = _mean_at(
+        coverage_max,
+        "unseen_transition_accuracy",
+        {"register_type": "nearest"},
+        "coverage_fraction",
+        0.50,
+    )
+
+    lines: list[str] = ["## Exp06: Learned transitions", ""]
+    lines.extend(
+        [
+            "- exact_pair/full_table shows that transition associations can be acquired from demonstrations.",
+            "- hashed_pair exposes capacity limits in the state-input conjunctive interface layer.",
+            "- sparse learned writer rows test whether learned transitions can target basins partially.",
+            "- coverage split rows show that arbitrary FSMs do not generalize without structural regularity.",
+            f"- exact_pair nearest accuracy after one epoch/full table: {_fmt_optional(exact_nearest)}.",
+            f"- exact_pair Hopfield accuracy after one epoch/full table: {_fmt_optional(exact_hopfield)}.",
+            f"- First hashed hidden_dim reaching 0.95 nearest accuracy: {_fmt_threshold(first_hidden_095)}.",
+            f"- nearest sparse random-noise accuracy at write_fraction=0.30: {_fmt_with_actual(sparse_near_030, sparse_near_030_actual, 0.30)}.",
+            f"- Hopfield sparse random-noise accuracy at write_fraction=0.30: {_fmt_with_actual(sparse_hop_030, sparse_hop_030_actual, 0.30)}.",
+            f"- nearest seen/unseen at coverage_fraction=0.50: seen={_fmt_with_actual(cov_nearest_seen_050, cov_nearest_seen_actual, 0.50)}, unseen={_fmt_with_actual(cov_nearest_unseen_050, cov_nearest_unseen_actual, 0.50)}.",
+        ]
+    )
+    _add_table(lines, "Overall summary by feature mode and register type", overall, max_rows=40)
+    _add_table(lines, "Hashed-pair capacity at max epoch", hashed_by_hidden, max_rows=40)
+    _add_table(lines, "Sparse learned transitions at max epoch", sparse_by_write, max_rows=40)
+    _add_table(lines, "Coverage all accuracy", coverage_all, max_rows=30)
+    _add_table(lines, "Coverage seen accuracy", coverage_seen, max_rows=30)
+    _add_table(lines, "Coverage unseen accuracy", coverage_unseen, max_rows=30)
+
+    result.markdown_lines = lines
+    result.stdout_line = (
+        f"Exp06: exact_pair nearest@1 epoch={_fmt_optional(exact_nearest)}, "
+        f"Hopfield@1 epoch={_fmt_optional(exact_hopfield)}"
+    )
+    result.paper_values = [
+        f"Exp06 exact_pair nearest accuracy after one epoch/full table: {_fmt_optional(exact_nearest)}",
+        f"Exp06 exact_pair Hopfield accuracy after one epoch/full table: {_fmt_optional(exact_hopfield)}",
+        f"Exp06 hashed_pair nearest accuracy by hidden_dim at max epoch: {hidden_nearest_text}",
+        f"Exp06 hashed_pair Hopfield accuracy by hidden_dim at max epoch: {hidden_hopfield_text}",
+        f"Exp06 first hidden_dim reaching 0.95 nearest accuracy: {_fmt_threshold(first_hidden_095)}",
+        f"Exp06 learned sparse nearest accuracy at write_fraction=0.30: {_fmt_with_actual(sparse_near_030, sparse_near_030_actual, 0.30)}",
+        f"Exp06 learned sparse Hopfield accuracy at write_fraction=0.30: {_fmt_with_actual(sparse_hop_030, sparse_hop_030_actual, 0.30)}",
+        f"Exp06 learned sparse nearest accuracy at write_fraction=0.50: {_fmt_with_actual(sparse_near_050, sparse_near_050_actual, 0.50)}",
+        f"Exp06 learned sparse Hopfield accuracy at write_fraction=0.50: {_fmt_with_actual(sparse_hop_050, sparse_hop_050_actual, 0.50)}",
+        f"Exp06 nearest seen accuracy at coverage_fraction=0.50: {_fmt_with_actual(cov_nearest_seen_050, cov_nearest_seen_actual, 0.50)}",
+        f"Exp06 nearest unseen accuracy at coverage_fraction=0.50: {_fmt_with_actual(cov_nearest_unseen_050, cov_nearest_unseen_actual, 0.50)}",
+    ]
+    result.latex_rows = [
+        (
+            "Exp06",
+            "Learned exact_pair nearest accuracy after one epoch",
+            _fmt_optional(exact_nearest),
+            "Transition acquisition from demonstrations succeeds under ideal cleanup",
+        ),
+        (
+            "Exp06",
+            "Learned exact_pair Hopfield accuracy after one epoch",
+            _fmt_optional(exact_hopfield),
+            "Learned transitions inherit recurrent cleanup limits",
+        ),
+    ]
+    return result
+
+
+def _first_param_reaching(
+    df: pd.DataFrame,
+    fixed_filters: dict[str, object],
+    param_col: str,
+    metric_col: str,
+    threshold: float,
+) -> float | None:
+    table = _metric_by_param(df, fixed_filters, param_col, metric_col)
+    rows = sorted(_records(table), key=lambda row: cast(float, _to_float(row.get(param_col))))
+    for row in rows:
+        param = _to_float(row.get(param_col))
+        metric = _to_float(row.get(metric_col))
+        if param is not None and metric is not None and metric >= threshold:
+            return param
+    return None
+
+
 def results_cheat_sheet() -> list[str]:
     return [
         "| Experiment | Main result | Interpretation | Best figure/table |",
@@ -1537,6 +1829,7 @@ def results_cheat_sheet() -> list[str]:
         "| Exp03 | Hopfield near-perfect up to around classical capacity, then degrades. | Capacity limits motivate modularity. | fig03/fig07 and statistics table |",
         "| Exp04 | random_noise sparse transitions improve strongly with write fraction; keep_current is harsher. | Sparse basin targeting is possible but may require reset/gating. | fig04b and Exp04 mode-difference table |",
         "| Exp05 | Protocol cases succeed. | Descriptor/payload distinction is operational. | fig05 and Exp05 summary |",
+        "| Exp06 | Learned exact-pair transitions acquire demonstrated FSM associations. | Transition maps can be learned from demonstrations but inherit interface and cleanup capacity limits. | fig08-fig11 and Exp06 summary |",
     ]
 
 
@@ -1547,6 +1840,7 @@ def collect_results(csv_dir: Path, out_dir: Path) -> list[AnalysisResult]:
         analyze_exp03,
         analyze_exp04,
         analyze_exp05,
+        analyze_exp06,
     ]
     return [analysis(csv_dir, out_dir) for analysis in analyses]
 

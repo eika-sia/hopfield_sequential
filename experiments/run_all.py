@@ -10,6 +10,7 @@ from experiments import (
     exp03_capacity,
     exp04_sparse_transitions,
     exp05_descriptor_payload,
+    exp06_learned_transitions,
 )
 
 
@@ -34,6 +35,7 @@ def main() -> None:
     exp03_capacity.run_experiment(quick=quick, jobs=args.jobs)
     exp04_sparse_transitions.run_experiment(quick=quick, jobs=args.jobs)
     exp05_descriptor_payload.run_experiment(quick=quick, jobs=args.jobs)
+    exp06_learned_transitions.run_experiment(quick=quick, jobs=args.jobs)
 
 
 if __name__ == "__main__":

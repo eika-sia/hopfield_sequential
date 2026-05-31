@@ -32,6 +32,10 @@ LABELS: dict[str, str] = {
     "capacity_ratio": "Capacity ratio m/n",
     "write_fraction": "Target coordinates written",
     "sparse_transition_accuracy": "Sparse transition accuracy",
+    "epochs": "Training epochs",
+    "all_transition_accuracy": "Learned transition accuracy",
+    "feature_capacity_ratio": "Pair-layer capacity ratio",
+    "coverage_fraction": "Demonstration coverage",
 }
 
 CASE_LABELS: dict[str, str] = {
@@ -264,6 +268,8 @@ def plot_line_with_sem(
         "transition_accuracy",
         "recovery_accuracy",
         "sparse_transition_accuracy",
+        "all_transition_accuracy",
+        "accuracy",
         "success",
     }:
         ax.set_ylim(0.0, 1.03)
@@ -676,6 +682,281 @@ def plot_fig07(df: pd.DataFrame, fmt: str) -> list[Path]:
     )
 
 
+def _series_label(row: Record) -> str:
+    feature_mode = str(row.get("feature_mode", ""))
+    hidden_dim = _to_float(row.get("hidden_dim"))
+    if feature_mode == "exact_pair":
+        return "exact pair"
+    if feature_mode == "hashed_pair":
+        return f"hashed h={int(hidden_dim)}" if hidden_dim is not None else "hashed"
+    if feature_mode == "random_conjunctive":
+        return (
+            f"random h={int(hidden_dim)}"
+            if hidden_dim is not None
+            else "random conjunctive"
+        )
+    return feature_mode
+
+
+def _learning_records_with_series(
+    df: pd.DataFrame,
+    series_func: Callable[[Record], str],
+) -> pd.DataFrame:
+    rows: list[Record] = []
+    for row in _records(df):
+        out = dict(row)
+        out["series"] = series_func(row)
+        rows.append(out)
+    return pd.DataFrame(rows)
+
+
+def _with_feature_capacity_ratio(df: pd.DataFrame) -> pd.DataFrame:
+    rows: list[Record] = []
+    for row in _records(df):
+        num_states = _to_float(row.get("num_states"))
+        num_inputs = _to_float(row.get("num_inputs"))
+        feature_dim = _to_float(row.get("feature_dim"))
+        if num_states is None or num_inputs is None or feature_dim is None:
+            continue
+        out = dict(row)
+        out["feature_capacity_ratio"] = feature_dim / (num_states * num_inputs)
+        rows.append(out)
+    return pd.DataFrame(rows)
+
+
+def _filter_learning_base(df: pd.DataFrame) -> pd.DataFrame:
+    return _filter_rows(
+        df,
+        lambda row: (
+            row.get("training_mode") == "full_table"
+            and row.get("output_mode") == "dense"
+            and _to_float(row.get("coverage_fraction")) == 1.0
+            and str(row.get("update_rule")) == "delta"
+        ),
+    )
+
+
+def _max_epoch_subset(df: pd.DataFrame) -> pd.DataFrame:
+    epoch_values = [
+        value for value in (_to_float(row.get("epochs")) for row in _records(df))
+        if value is not None
+    ]
+    if not epoch_values:
+        return pd.DataFrame()
+    max_epoch = max(epoch_values)
+    return _filter_rows(
+        df,
+        lambda row: (
+            (epoch := _to_float(row.get("epochs"))) is not None
+            and math.isclose(epoch, max_epoch)
+        ),
+    )
+
+
+def _plot_metric_by_category(
+    ax: Any,
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    category: str,
+    title: str,
+    xlabel: str | None = None,
+    ylabel: str | None = None,
+) -> None:
+    summary = mean_sem(df, [x, category], y)
+    if summary.empty:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return
+    for category_value in _sorted_values(summary, category):
+        line_df = _rows_for(summary, category, category_value)
+        rows = sorted(_records(line_df), key=lambda row: float(cast(Any, row[x])))
+        xs = [float(row[x]) for row in rows]
+        ys = [float(row[y]) for row in rows]
+        sems = [float(row.get("sem", 0.0)) for row in rows]
+        ax.errorbar(xs, ys, yerr=sems, marker="o", capsize=2.5, label=str(category_value))
+    ax.set_xticks([float(cast(Any, value)) for value in _sorted_values(df, x)])
+    ax.set_title(title)
+    ax.set_xlabel(xlabel or LABELS.get(x, x))
+    ax.set_ylabel(ylabel or LABELS.get(y, y))
+    if y in {"all_transition_accuracy", "accuracy"}:
+        ax.set_ylim(0.0, 1.03)
+    ax.legend(frameon=False)
+
+
+def plot_fig08(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig08_learned_transition_accuracy"
+    cols = [
+        "epochs",
+        "all_transition_accuracy",
+        "feature_mode",
+        "hidden_dim",
+        "training_mode",
+        "output_mode",
+        "coverage_fraction",
+        "register_type",
+        "update_rule",
+    ]
+    if not _required(df, cols, stem):
+        return []
+    base = _learning_records_with_series(_filter_learning_base(df), _series_label)
+    if base.empty:
+        print(f"Warning: {stem} skipped; no dense full-table delta learning rows.")
+        return []
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2), constrained_layout=True)
+    for idx, register_type in enumerate(["nearest", "hopfield"]):
+        ax = axes[idx]
+        _plot_metric_by_category(
+            ax,
+            _rows_for(base, "register_type", register_type),
+            "epochs",
+            "all_transition_accuracy",
+            "series",
+            _register_panel_title(register_type),
+        )
+        _add_panel_label(ax, f"({chr(ord('a') + idx)})")
+    return savefig(fig, stem, fmt)
+
+
+def plot_fig09(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig09_pair_layer_capacity"
+    cols = [
+        "num_states",
+        "num_inputs",
+        "feature_dim",
+        "feature_mode",
+        "epochs",
+        "all_transition_accuracy",
+        "register_type",
+        "training_mode",
+        "output_mode",
+    ]
+    if not _required(df, cols, stem):
+        return []
+    base = _max_epoch_subset(_filter_learning_base(df))
+    base = _filter_rows(
+        base,
+        lambda row: row.get("feature_mode") in {"exact_pair", "hashed_pair"},
+    )
+    base = _with_feature_capacity_ratio(base)
+    if base.empty:
+        print(f"Warning: {stem} skipped; no feature-capacity rows.")
+        return []
+    labelled = _learning_records_with_series(
+        base,
+        lambda row: _register_panel_title(str(row.get("register_type"))),
+    )
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    _plot_metric_by_category(
+        ax,
+        labelled,
+        "feature_capacity_ratio",
+        "all_transition_accuracy",
+        "series",
+        "Pair-layer capacity limits learned transitions",
+    )
+    return savefig(fig, stem, fmt)
+
+
+def plot_fig10(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig10_learned_sparse_transitions"
+    cols = [
+        "feature_mode",
+        "output_mode",
+        "write_fraction",
+        "unwritten_mode",
+        "register_type",
+        "epochs",
+        "all_transition_accuracy",
+    ]
+    if not _required(df, cols, stem):
+        return []
+    base = _filter_rows(
+        df,
+        lambda row: (
+            row.get("feature_mode") == "exact_pair"
+            and row.get("output_mode") == "sparse_topk"
+        ),
+    )
+    base = _max_epoch_subset(base)
+    if base.empty:
+        print(f"Warning: {stem} skipped; no sparse learned transition rows.")
+        return []
+    labelled = _learning_records_with_series(
+        base,
+        lambda row: (
+            f"{str(row.get('register_type'))}, "
+            f"{str(row.get('unwritten_mode')).replace('_', '-')}"
+        ),
+    )
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    _plot_metric_by_category(
+        ax,
+        labelled,
+        "write_fraction",
+        "all_transition_accuracy",
+        "series",
+        "Sparse learned transition proposals",
+    )
+    return savefig(fig, stem, fmt)
+
+
+def plot_fig11(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig11_coverage_seen_unseen"
+    cols = [
+        "training_mode",
+        "coverage_fraction",
+        "register_type",
+        "seen_transition_accuracy",
+        "unseen_transition_accuracy",
+        "all_transition_accuracy",
+        "epochs",
+    ]
+    if not _required(df, cols, stem):
+        return []
+    base = _filter_rows(
+        df,
+        lambda row: (
+            row.get("training_mode") == "coverage_sweep"
+            and row.get("register_type") == "nearest"
+            and row.get("output_mode") == "dense"
+        ),
+    )
+    base = _max_epoch_subset(base)
+    rows: list[Record] = []
+    for row in _records(base):
+        for metric, label in [
+            ("seen_transition_accuracy", "seen"),
+            ("unseen_transition_accuracy", "unseen"),
+            ("all_transition_accuracy", "all"),
+        ]:
+            value = _to_float(row.get(metric))
+            coverage = _to_float(row.get("coverage_fraction"))
+            if value is None or coverage is None:
+                continue
+            rows.append(
+                {
+                    "coverage_fraction": coverage,
+                    "accuracy": value,
+                    "series": label,
+                }
+            )
+    long_df = pd.DataFrame(rows)
+    if long_df.empty:
+        print(f"Warning: {stem} skipped; no coverage rows.")
+        return []
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    _plot_metric_by_category(
+        ax,
+        long_df,
+        "coverage_fraction",
+        "accuracy",
+        "series",
+        "Seen and unseen arbitrary transitions",
+        ylabel="Accuracy",
+    )
+    return savefig(fig, stem, fmt)
+
+
 def plot_transition_accuracy(df: pd.DataFrame) -> list[Path]:
     paths: list[Path] = []
     paths.extend(plot_fig01(df, "both"))
@@ -706,6 +987,15 @@ def plot_sparse_transitions(df: pd.DataFrame) -> list[Path]:
 
 def plot_descriptor_payload(df: pd.DataFrame) -> list[Path]:
     return plot_fig05(df, "both")
+
+
+def plot_learning_results(df: pd.DataFrame) -> list[Path]:
+    paths: list[Path] = []
+    paths.extend(plot_fig08(df, "both"))
+    paths.extend(plot_fig09(df, "both"))
+    paths.extend(plot_fig10(df, "both"))
+    paths.extend(plot_fig11(df, "both"))
+    return paths
 
 
 def _metric_at(
@@ -847,6 +1137,29 @@ def generate_summary_table(data: dict[str, pd.DataFrame]) -> str:
             ]
         )
 
+    exp06 = data.get("exp06_learned_transitions.csv", pd.DataFrame())
+    if not exp06.empty:
+        exact = _filter_rows(
+            exp06,
+            lambda row: (
+                row.get("feature_mode") == "exact_pair"
+                and row.get("training_mode") == "full_table"
+                and row.get("output_mode") == "dense"
+                and _to_float(row.get("epochs")) == 1.0
+            ),
+        )
+        nearest = _rows_for(exact, "register_type", "nearest")
+        hopfield = _rows_for(exact, "register_type", "hopfield")
+        rows.append(
+            [
+                "Exp06 Learned transitions",
+                "Learned transition accuracy",
+                f"nearest one-epoch mean = {_fmt(_mean_metric(nearest, 'all_transition_accuracy'))}",
+                f"Hopfield one-epoch mean = {_fmt(_mean_metric(hopfield, 'all_transition_accuracy'))}",
+                "Transition associations can be learned from demonstrations; cleanup still limits performance.",
+            ]
+        )
+
     lines = [
         r"\begin{tabular}{p{0.18\linewidth} p{0.14\linewidth} p{0.18\linewidth} p{0.22\linewidth} p{0.22\linewidth}}",
         r"\hline",
@@ -883,6 +1196,7 @@ def plot_all_from_csv(fmt: str = "both") -> list[Path]:
             "exp03_capacity.csv",
             "exp04_sparse_transitions.csv",
             "exp05_descriptor_payload.csv",
+            "exp06_learned_transitions.csv",
         ]
     }
 
@@ -892,6 +1206,7 @@ def plot_all_from_csv(fmt: str = "both") -> list[Path]:
     exp03 = data["exp03_capacity.csv"]
     exp04 = data["exp04_sparse_transitions.csv"]
     exp05 = data["exp05_descriptor_payload.csv"]
+    exp06 = data["exp06_learned_transitions.csv"]
 
     paths.extend(plot_fig01(exp01, fmt))
     paths.extend(plot_fig01b(exp01, fmt))
@@ -904,6 +1219,10 @@ def plot_all_from_csv(fmt: str = "both") -> list[Path]:
     paths.extend(plot_fig05(exp05, fmt))
     paths.extend(plot_fig06(exp01, fmt))
     paths.extend(plot_fig07(exp03, fmt))
+    paths.extend(plot_fig08(exp06, fmt))
+    paths.extend(plot_fig09(exp06, fmt))
+    paths.extend(plot_fig10(exp06, fmt))
+    paths.extend(plot_fig11(exp06, fmt))
     generate_summary_table(data)
     return paths
 

@@ -8,6 +8,7 @@ Loaded CSVs:
 - `results/csv/exp03_capacity.csv`
 - `results/csv/exp04_sparse_transitions.csv`
 - `results/csv/exp05_descriptor_payload.csv`
+- `results/csv/exp06_learned_transitions.csv`
 
 ## Exp01: Transition realization
 
@@ -417,6 +418,109 @@ Loaded CSVs:
 | COMPARE | 0.750 | 10.000 | 0.250 | 0.016 | 0.005 | 10.000 | 0.250 | 0.016 | 0.005 |
 | COMPARE | 1.000 | 10.000 | 0.000 | 0.000 | 0.000 | 10.000 | 0.000 | 0.000 | 0.000 |
 
+## Exp06: Learned transitions
+
+- exact_pair/full_table shows that transition associations can be acquired from demonstrations.
+- hashed_pair exposes capacity limits in the state-input conjunctive interface layer.
+- sparse learned writer rows test whether learned transitions can target basins partially.
+- coverage split rows show that arbitrary FSMs do not generalize without structural regularity.
+- exact_pair nearest accuracy after one epoch/full table: 1.000.
+- exact_pair Hopfield accuracy after one epoch/full table: 0.909.
+- First hashed hidden_dim reaching 0.95 nearest accuracy: not reached.
+- nearest sparse random-noise accuracy at write_fraction=0.30: 0.999.
+- Hopfield sparse random-noise accuracy at write_fraction=0.30: 0.945.
+- nearest seen/unseen at coverage_fraction=0.50: seen=1.000, unseen=0.058.
+
+### Overall summary by feature mode and register type
+
+| feature_mode | register_type | count | all_transition_accuracy_mean | all_transition_accuracy_std | all_transition_accuracy_sem | all_transition_accuracy_min | all_transition_accuracy_median | all_transition_accuracy_max |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| exact_pair | hopfield | 6600.000 | 0.737 | 0.341 | 0.004 | 0.000 | 1.000 | 1.000 |
+| exact_pair | nearest | 6600.000 | 0.799 | 0.343 | 0.004 | 0.000 | 1.000 | 1.000 |
+| hashed_pair | hopfield | 30240.000 | 0.562 | 0.342 | 0.002 | 0.000 | 0.625 | 1.000 |
+| hashed_pair | nearest | 30240.000 | 0.621 | 0.333 | 0.002 | 0.000 | 0.750 | 1.000 |
+| random_conjunctive | hopfield | 25200.000 | 0.308 | 0.342 | 0.002 | 0.000 | 0.156 | 1.000 |
+| random_conjunctive | nearest | 25200.000 | 0.396 | 0.371 | 0.002 | 0.000 | 0.234 | 1.000 |
+
+### Hashed-pair capacity at max epoch
+
+| register_type | hidden_dim | count | all_transition_accuracy_mean | all_transition_accuracy_std | all_transition_accuracy_sem | all_transition_accuracy_min | all_transition_accuracy_median | all_transition_accuracy_max | all_transition_accuracy |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hopfield | 32.000 | 360.000 | 0.384 | 0.250 | 0.013 | 0.033 | 0.309 | 1.000 | 0.384 |
+| hopfield | 64.000 | 360.000 | 0.518 | 0.267 | 0.014 | 0.041 | 0.496 | 1.000 | 0.518 |
+| hopfield | 128.000 | 360.000 | 0.647 | 0.252 | 0.013 | 0.090 | 0.680 | 1.000 | 0.647 |
+| hopfield | 256.000 | 360.000 | 0.745 | 0.224 | 0.012 | 0.143 | 0.828 | 1.000 | 0.745 |
+| hopfield | 512.000 | 360.000 | 0.818 | 0.200 | 0.011 | 0.215 | 0.898 | 1.000 | 0.818 |
+| hopfield | 1024.000 | 360.000 | 0.858 | 0.184 | 0.010 | 0.258 | 0.949 | 1.000 | 0.858 |
+| nearest | 32.000 | 360.000 | 0.400 | 0.238 | 0.013 | 0.068 | 0.352 | 1.000 | 0.400 |
+| nearest | 64.000 | 360.000 | 0.546 | 0.245 | 0.013 | 0.131 | 0.551 | 1.000 | 0.546 |
+| nearest | 128.000 | 360.000 | 0.690 | 0.211 | 0.011 | 0.248 | 0.703 | 1.000 | 0.690 |
+| nearest | 256.000 | 360.000 | 0.804 | 0.156 | 0.008 | 0.420 | 0.836 | 1.000 | 0.804 |
+| nearest | 512.000 | 360.000 | 0.890 | 0.100 | 0.005 | 0.621 | 0.922 | 1.000 | 0.890 |
+| nearest | 1024.000 | 360.000 | 0.939 | 0.059 | 0.003 | 0.758 | 0.953 | 1.000 | 0.939 |
+
+### Sparse learned transitions at max epoch
+
+| register_type | unwritten_mode | write_fraction | count | all_transition_accuracy_mean | all_transition_accuracy_std | all_transition_accuracy_sem | all_transition_accuracy_min | all_transition_accuracy_median | all_transition_accuracy_max | all_transition_accuracy |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hopfield | keep_current | 0.200 | 40.000 | 0.049 | 0.026 | 0.004 | 0.008 | 0.047 | 0.109 | 0.049 |
+| hopfield | keep_current | 0.300 | 40.000 | 0.085 | 0.041 | 0.007 | 0.016 | 0.078 | 0.211 | 0.085 |
+| hopfield | keep_current | 0.400 | 40.000 | 0.571 | 0.100 | 0.016 | 0.336 | 0.578 | 0.750 | 0.571 |
+| hopfield | keep_current | 0.500 | 40.000 | 0.969 | 0.057 | 0.009 | 0.758 | 1.000 | 1.000 | 0.969 |
+| hopfield | keep_current | 0.750 | 40.000 | 1.000 | 0.002 | 0.000 | 0.992 | 1.000 | 1.000 | 1.000 |
+| hopfield | keep_current | 1.000 | 40.000 | 0.999 | 0.006 | 0.001 | 0.961 | 1.000 | 1.000 | 0.999 |
+| hopfield | random_noise | 0.200 | 40.000 | 0.770 | 0.215 | 0.034 | 0.297 | 0.855 | 1.000 | 0.770 |
+| hopfield | random_noise | 0.300 | 40.000 | 0.945 | 0.093 | 0.015 | 0.711 | 1.000 | 1.000 | 0.945 |
+| hopfield | random_noise | 0.400 | 40.000 | 0.989 | 0.024 | 0.004 | 0.922 | 1.000 | 1.000 | 0.989 |
+| hopfield | random_noise | 0.500 | 40.000 | 0.996 | 0.011 | 0.002 | 0.953 | 1.000 | 1.000 | 0.996 |
+| hopfield | random_noise | 0.750 | 40.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| hopfield | random_noise | 1.000 | 40.000 | 0.999 | 0.006 | 0.001 | 0.961 | 1.000 | 1.000 | 0.999 |
+| nearest | keep_current | 0.200 | 40.000 | 0.048 | 0.026 | 0.004 | 0.008 | 0.043 | 0.109 | 0.048 |
+| nearest | keep_current | 0.300 | 40.000 | 0.048 | 0.026 | 0.004 | 0.008 | 0.043 | 0.109 | 0.048 |
+| nearest | keep_current | 0.400 | 40.000 | 0.048 | 0.026 | 0.004 | 0.008 | 0.043 | 0.109 | 0.048 |
+| nearest | keep_current | 0.500 | 40.000 | 0.521 | 0.070 | 0.011 | 0.352 | 0.516 | 0.641 | 0.521 |
+| nearest | keep_current | 0.750 | 40.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| nearest | keep_current | 1.000 | 40.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| nearest | random_noise | 0.200 | 40.000 | 0.941 | 0.058 | 0.009 | 0.812 | 0.965 | 1.000 | 0.941 |
+| nearest | random_noise | 0.300 | 40.000 | 0.999 | 0.004 | 0.001 | 0.984 | 1.000 | 1.000 | 0.999 |
+| nearest | random_noise | 0.400 | 40.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| nearest | random_noise | 0.500 | 40.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| nearest | random_noise | 0.750 | 40.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| nearest | random_noise | 1.000 | 40.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+### Coverage all accuracy
+
+| register_type | coverage_fraction | count | all_transition_accuracy_mean | all_transition_accuracy_std | all_transition_accuracy_sem | all_transition_accuracy_min | all_transition_accuracy_median | all_transition_accuracy_max | all_transition_accuracy |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hopfield | 0.250 | 360.000 | 0.268 | 0.069 | 0.004 | 0.074 | 0.273 | 0.469 | 0.268 |
+| hopfield | 0.500 | 360.000 | 0.481 | 0.099 | 0.005 | 0.125 | 0.516 | 0.688 | 0.481 |
+| hopfield | 0.750 | 360.000 | 0.695 | 0.135 | 0.007 | 0.227 | 0.750 | 0.875 | 0.695 |
+| nearest | 0.250 | 360.000 | 0.293 | 0.038 | 0.002 | 0.250 | 0.281 | 0.438 | 0.293 |
+| nearest | 0.500 | 360.000 | 0.529 | 0.032 | 0.002 | 0.500 | 0.516 | 0.688 | 0.529 |
+| nearest | 0.750 | 360.000 | 0.766 | 0.021 | 0.001 | 0.750 | 0.758 | 0.875 | 0.766 |
+
+### Coverage seen accuracy
+
+| register_type | coverage_fraction | count | seen_transition_accuracy_mean | seen_transition_accuracy_std | seen_transition_accuracy_sem | seen_transition_accuracy_min | seen_transition_accuracy_median | seen_transition_accuracy_max | seen_transition_accuracy |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hopfield | 0.250 | 360.000 | 0.907 | 0.179 | 0.009 | 0.219 | 1.000 | 1.000 | 0.907 |
+| hopfield | 0.500 | 360.000 | 0.909 | 0.173 | 0.009 | 0.219 | 1.000 | 1.000 | 0.909 |
+| hopfield | 0.750 | 360.000 | 0.909 | 0.172 | 0.009 | 0.292 | 1.000 | 1.000 | 0.909 |
+| nearest | 0.250 | 360.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| nearest | 0.500 | 360.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| nearest | 0.750 | 360.000 | 1.000 | 0.000 | 0.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+### Coverage unseen accuracy
+
+| register_type | coverage_fraction | count | unseen_transition_accuracy_mean | unseen_transition_accuracy_std | unseen_transition_accuracy_sem | unseen_transition_accuracy_min | unseen_transition_accuracy_median | unseen_transition_accuracy_max | unseen_transition_accuracy |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hopfield | 0.250 | 360.000 | 0.055 | 0.053 | 0.003 | 0.000 | 0.042 | 0.292 | 0.055 |
+| hopfield | 0.500 | 360.000 | 0.054 | 0.058 | 0.003 | 0.000 | 0.031 | 0.375 | 0.054 |
+| hopfield | 0.750 | 360.000 | 0.056 | 0.075 | 0.004 | 0.000 | 0.031 | 0.500 | 0.056 |
+| nearest | 0.250 | 360.000 | 0.057 | 0.051 | 0.003 | 0.000 | 0.042 | 0.250 | 0.057 |
+| nearest | 0.500 | 360.000 | 0.058 | 0.063 | 0.003 | 0.000 | 0.031 | 0.375 | 0.058 |
+| nearest | 0.750 | 360.000 | 0.062 | 0.082 | 0.004 | 0.000 | 0.031 | 0.500 | 0.062 |
+
 ## Cross-experiment interpretation
 
 | Experiment | Main result | Interpretation | Best figure/table |
@@ -426,6 +530,7 @@ Loaded CSVs:
 | Exp03 | Hopfield near-perfect up to around classical capacity, then degrades. | Capacity limits motivate modularity. | fig03/fig07 and statistics table |
 | Exp04 | random_noise sparse transitions improve strongly with write fraction; keep_current is harsher. | Sparse basin targeting is possible but may require reset/gating. | fig04b and Exp04 mode-difference table |
 | Exp05 | Protocol cases succeed. | Descriptor/payload distinction is operational. | fig05 and Exp05 summary |
+| Exp06 | Learned exact-pair transitions acquire demonstrated FSM associations. | Transition maps can be learned from demonstrations but inherit interface and cleanup capacity limits. | fig08-fig11 and Exp06 summary |
 
 ## Paper-ready numbers
 
@@ -468,3 +573,14 @@ Loaded CSVs:
 - Exp05 content success at corruption_rate=0.0: 1.000
 - Exp05 content success at corruption_rate=0.5: 0.498
 - Exp05 content success at corruption_rate=1.0: 0.000
+- Exp06 exact_pair nearest accuracy after one epoch/full table: 1.000
+- Exp06 exact_pair Hopfield accuracy after one epoch/full table: 0.909
+- Exp06 hashed_pair nearest accuracy by hidden_dim at max epoch: 32.000=0.400, 64.000=0.546, 128.000=0.690, 256.000=0.804, 512.000=0.890, 1024.000=0.939
+- Exp06 hashed_pair Hopfield accuracy by hidden_dim at max epoch: 32.000=0.384, 64.000=0.518, 128.000=0.647, 256.000=0.745, 512.000=0.818, 1024.000=0.858
+- Exp06 first hidden_dim reaching 0.95 nearest accuracy: not reached
+- Exp06 learned sparse nearest accuracy at write_fraction=0.30: 0.999
+- Exp06 learned sparse Hopfield accuracy at write_fraction=0.30: 0.945
+- Exp06 learned sparse nearest accuracy at write_fraction=0.50: 1.000
+- Exp06 learned sparse Hopfield accuracy at write_fraction=0.50: 0.996
+- Exp06 nearest seen accuracy at coverage_fraction=0.50: 1.000
+- Exp06 nearest unseen accuracy at coverage_fraction=0.50: 0.058
