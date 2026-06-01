@@ -11,6 +11,7 @@ from experiments import (
     exp04_sparse_transitions,
     exp05_descriptor_payload,
     exp06_learned_transitions,
+    exp07_structured_grammar_learning,
 )
 
 
@@ -36,6 +37,7 @@ def main() -> None:
     exp04_sparse_transitions.run_experiment(quick=quick, jobs=args.jobs)
     exp05_descriptor_payload.run_experiment(quick=quick, jobs=args.jobs)
     exp06_learned_transitions.run_experiment(quick=quick, jobs=args.jobs)
+    exp07_structured_grammar_learning.run_experiment(quick=quick, jobs=args.jobs)
 
 
 if __name__ == "__main__":

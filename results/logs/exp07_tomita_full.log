@@ -1,0 +1,7 @@
+zsh:3: command not found: --total-memory-gb
+Running experiment 7: structured grammar learning (455 conditions, jobs=16)...
+Saved CSV to results/csv/exp07_structured_grammar_learning.csv
+Saved figures to results/figures (10 files)
+Summary:
+  mean test string accuracy = 0.862
+  mean length generalization accuracy = 0.862

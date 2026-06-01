@@ -36,6 +36,12 @@ LABELS: dict[str, str] = {
     "all_transition_accuracy": "Learned transition accuracy",
     "feature_capacity_ratio": "Pair-layer capacity ratio",
     "coverage_fraction": "Demonstration coverage",
+    "grammar_name": "Grammar",
+    "test_string_accuracy": "Test string accuracy",
+    "length_generalization_accuracy": "Length generalization accuracy",
+    "transition_coverage_train": "Training transition coverage",
+    "masked_topk_accuracy": "Masked top-k accuracy",
+    "topk_k": "Written coordinates k",
 }
 
 CASE_LABELS: dict[str, str] = {
@@ -957,6 +963,213 @@ def plot_fig11(df: pd.DataFrame, fmt: str) -> list[Path]:
     return savefig(fig, stem, fmt)
 
 
+def _main_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if "row_type" not in df.columns:
+        return df
+    return _rows_for(df, "row_type", "main")
+
+
+def plot_fig12(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig12_tomita_generalization"
+    cols = [
+        "row_type",
+        "grammar_name",
+        "feature_mode",
+        "register_type",
+        "test_string_accuracy",
+    ]
+    if not _required(df, cols, stem):
+        return []
+    main = _filter_rows(
+        _main_rows(df),
+        lambda row: str(row.get("grammar_name", "")).startswith("tomita"),
+    )
+    if main.empty:
+        print(f"Warning: {stem} skipped; no Tomita rows.")
+        return []
+    labelled = _learning_records_with_series(
+        main,
+        lambda row: f"{row.get('feature_mode')} {row.get('register_type')}",
+    )
+    summary = mean_sem(labelled, ["grammar_name", "series"], "test_string_accuracy")
+    grammars = [str(value) for value in _sorted_values(summary, "grammar_name")]
+    series = [str(value) for value in _sorted_values(summary, "series")]
+    width = 0.8 / max(1, len(series))
+    fig, ax = plt.subplots(figsize=(10.5, 4.2), constrained_layout=True)
+    x = np.arange(len(grammars))
+    for idx, series_name in enumerate(series):
+        rows = _records(_rows_for(summary, "series", series_name))
+        values = {
+            str(row["grammar_name"]): float(row["test_string_accuracy"])
+            for row in rows
+        }
+        heights = [values.get(grammar, math.nan) for grammar in grammars]
+        ax.bar(x + (idx - (len(series) - 1) / 2) * width, heights, width, label=series_name)
+    ax.set_xticks(x)
+    ax.set_xticklabels(grammars, rotation=30, ha="right")
+    ax.set_ylabel("Test string accuracy")
+    ax.set_title("Tomita grammar generalization")
+    ax.set_ylim(0.0, 1.03)
+    ax.legend(frameon=False)
+    return savefig(fig, stem, fmt)
+
+
+def plot_fig13(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig13_length_generalization"
+    cols = ["row_type", "length", "test_string_accuracy", "grammar_name", "train_max_len"]
+    if not _required(df, cols, stem):
+        return []
+    length_rows = _filter_rows(
+        df,
+        lambda row: (
+            row.get("row_type") == "length"
+            and row.get("feature_mode") == "exact_pair"
+            and row.get("register_type") == "nearest"
+        ),
+    )
+    if length_rows.empty:
+        print(f"Warning: {stem} skipped; no length rows.")
+        return []
+    summary = mean_sem(length_rows, ["length"], "test_string_accuracy")
+    rows = sorted(_records(summary), key=lambda row: float(row["length"]))
+    xs = [float(row["length"]) for row in rows]
+    ys = [float(row["test_string_accuracy"]) for row in rows]
+    sems = [float(row.get("sem", 0.0)) for row in rows]
+    train_max = _to_float(_records(length_rows)[0].get("train_max_len"))
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    ax.errorbar(xs, ys, yerr=sems, marker="o", capsize=2.5)
+    if train_max is not None:
+        ax.axvline(train_max, color="0.35", linestyle="--", linewidth=1.1)
+    ax.set_xticks(xs)
+    ax.set_ylim(0.0, 1.03)
+    ax.set_xlabel("String length")
+    ax.set_ylabel("Accept/reject accuracy")
+    ax.set_title("Length generalization")
+    return savefig(fig, stem, fmt)
+
+
+def plot_fig14(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig14_transition_coverage_vs_accuracy"
+    cols = ["row_type", "transition_coverage_train", "test_string_accuracy", "grammar_name"]
+    if not _required(df, cols, stem):
+        return []
+    main = _main_rows(df)
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    for register_type in _sorted_values(main, "register_type"):
+        subset = _rows_for(main, "register_type", register_type)
+        xs = [
+            float(row["transition_coverage_train"])
+            for row in _records(subset)
+            if _to_float(row.get("test_string_accuracy")) is not None
+        ]
+        ys = [
+            float(row["test_string_accuracy"])
+            for row in _records(subset)
+            if _to_float(row.get("test_string_accuracy")) is not None
+        ]
+        ax.scatter(xs, ys, s=24, alpha=0.75, label=str(register_type))
+    ax.set_xlabel("Training transition coverage")
+    ax.set_ylabel("Test string accuracy")
+    ax.set_ylim(0.0, 1.03)
+    ax.set_title("Transition coverage predicts grammar generalization")
+    ax.legend(frameon=False)
+    return savefig(fig, stem, fmt)
+
+
+def plot_fig15(df: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig15_topk_bound"
+    cols = [
+        "row_type",
+        "topk_k",
+        "masked_topk_accuracy",
+        "theoretical_k_delta_05",
+        "theoretical_k_delta_01",
+    ]
+    if not _required(df, cols, stem):
+        return []
+    topk_rows = _rows_for(df, "row_type", "topk")
+    if topk_rows.empty:
+        print(f"Warning: {stem} skipped; no top-k rows.")
+        return []
+    summary = mean_sem(topk_rows, ["topk_k"], "masked_topk_accuracy")
+    rows = sorted(_records(summary), key=lambda row: float(row["topk_k"]))
+    xs = [float(row["topk_k"]) for row in rows]
+    ys = [float(row["masked_topk_accuracy"]) for row in rows]
+    sems = [float(row.get("sem", 0.0)) for row in rows]
+    k05 = _to_float(_records(topk_rows)[0].get("theoretical_k_delta_05"))
+    k01 = _to_float(_records(topk_rows)[0].get("theoretical_k_delta_01"))
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    ax.errorbar(xs, ys, yerr=sems, marker="o", capsize=2.5)
+    ax.axhline(0.95, color="0.35", linestyle="--", linewidth=1.0)
+    ax.axhline(0.99, color="0.55", linestyle=":", linewidth=1.0)
+    if k05 is not None:
+        ax.axvline(k05, color="0.35", linestyle="--", linewidth=1.0)
+    if k01 is not None:
+        ax.axvline(k01, color="0.55", linestyle=":", linewidth=1.0)
+    ax.set_xticks(xs)
+    ax.set_ylim(0.0, 1.03)
+    ax.set_xlabel("Written coordinates k")
+    ax.set_ylabel("Masked top-k accuracy")
+    ax.set_title("Sparse top-k basin targeting")
+    return savefig(fig, stem, fmt)
+
+
+def plot_fig16(exp07: pd.DataFrame, exp06: pd.DataFrame, fmt: str) -> list[Path]:
+    stem = "fig16_seen_unseen_structured"
+    if exp07.empty:
+        print(f"Warning: {stem} skipped; no Exp07 data.")
+        return []
+    rows: list[Record] = []
+    main = _main_rows(exp07)
+    if not main.empty:
+        rows.append(
+            {
+                "condition": "Exp07 structured seen",
+                "accuracy": _mean_metric(main, "seen_transition_accuracy"),
+            }
+        )
+        rows.append(
+            {
+                "condition": "Exp07 structured unseen",
+                "accuracy": _mean_metric(main, "unseen_transition_accuracy"),
+            }
+        )
+    if not exp06.empty:
+        coverage = _filter_rows(
+            exp06,
+            lambda row: (
+                row.get("training_mode") == "coverage_sweep"
+                and row.get("register_type") == "nearest"
+                and row.get("output_mode") == "dense"
+            ),
+        )
+        if not coverage.empty:
+            rows.append(
+                {
+                    "condition": "Exp06 random seen",
+                    "accuracy": _mean_metric(coverage, "seen_transition_accuracy"),
+                }
+            )
+            rows.append(
+                {
+                    "condition": "Exp06 random unseen",
+                    "accuracy": _mean_metric(coverage, "unseen_transition_accuracy"),
+                }
+            )
+    plot_df = pd.DataFrame(rows)
+    if plot_df.empty:
+        return []
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    labels = [str(row["condition"]) for row in _records(plot_df)]
+    heights = [float(row["accuracy"]) for row in _records(plot_df)]
+    ax.bar(labels, heights, color="0.35")
+    ax.tick_params(axis="x", rotation=25)
+    ax.set_ylim(0.0, 1.03)
+    ax.set_ylabel("Transition accuracy")
+    ax.set_title("Structured grammars vs random transition tables")
+    return savefig(fig, stem, fmt)
+
+
 def plot_transition_accuracy(df: pd.DataFrame) -> list[Path]:
     paths: list[Path] = []
     paths.extend(plot_fig01(df, "both"))
@@ -995,6 +1208,16 @@ def plot_learning_results(df: pd.DataFrame) -> list[Path]:
     paths.extend(plot_fig09(df, "both"))
     paths.extend(plot_fig10(df, "both"))
     paths.extend(plot_fig11(df, "both"))
+    return paths
+
+
+def plot_structured_grammar_results(df: pd.DataFrame) -> list[Path]:
+    paths: list[Path] = []
+    paths.extend(plot_fig12(df, "both"))
+    paths.extend(plot_fig13(df, "both"))
+    paths.extend(plot_fig14(df, "both"))
+    paths.extend(plot_fig15(df, "both"))
+    paths.extend(plot_fig16(df, pd.DataFrame(), "both"))
     return paths
 
 
@@ -1160,6 +1383,26 @@ def generate_summary_table(data: dict[str, pd.DataFrame]) -> str:
             ]
         )
 
+    exp07 = data.get("exp07_structured_grammar_learning.csv", pd.DataFrame())
+    if not exp07.empty:
+        main = _main_rows(exp07)
+        exact = _filter_rows(
+            main,
+            lambda row: (
+                row.get("feature_mode") == "exact_pair"
+                and row.get("register_type") == "nearest"
+            ),
+        )
+        rows.append(
+            [
+                "Exp07 Structured grammar learning",
+                "String accuracy",
+                f"nearest test mean = {_fmt(_mean_metric(exact, 'test_string_accuracy'))}",
+                f"length-generalization mean = {_fmt(_mean_metric(exact, 'length_generalization_accuracy'))}",
+                "Structured grammars test reusable transition acquisition beyond random FSM memorization.",
+            ]
+        )
+
     lines = [
         r"\begin{tabular}{p{0.18\linewidth} p{0.14\linewidth} p{0.18\linewidth} p{0.22\linewidth} p{0.22\linewidth}}",
         r"\hline",
@@ -1197,6 +1440,7 @@ def plot_all_from_csv(fmt: str = "both") -> list[Path]:
             "exp04_sparse_transitions.csv",
             "exp05_descriptor_payload.csv",
             "exp06_learned_transitions.csv",
+            "exp07_structured_grammar_learning.csv",
         ]
     }
 
@@ -1207,6 +1451,7 @@ def plot_all_from_csv(fmt: str = "both") -> list[Path]:
     exp04 = data["exp04_sparse_transitions.csv"]
     exp05 = data["exp05_descriptor_payload.csv"]
     exp06 = data["exp06_learned_transitions.csv"]
+    exp07 = data["exp07_structured_grammar_learning.csv"]
 
     paths.extend(plot_fig01(exp01, fmt))
     paths.extend(plot_fig01b(exp01, fmt))
@@ -1223,6 +1468,11 @@ def plot_all_from_csv(fmt: str = "both") -> list[Path]:
     paths.extend(plot_fig09(exp06, fmt))
     paths.extend(plot_fig10(exp06, fmt))
     paths.extend(plot_fig11(exp06, fmt))
+    paths.extend(plot_fig12(exp07, fmt))
+    paths.extend(plot_fig13(exp07, fmt))
+    paths.extend(plot_fig14(exp07, fmt))
+    paths.extend(plot_fig15(exp07, fmt))
+    paths.extend(plot_fig16(exp07, exp06, fmt))
     generate_summary_table(data)
     return paths
 

@@ -33,6 +33,7 @@ CSV_NAMES: dict[str, str] = {
     "exp04": "exp04_sparse_transitions.csv",
     "exp05": "exp05_descriptor_payload.csv",
     "exp06": "exp06_learned_transitions.csv",
+    "exp07": "exp07_structured_grammar_learning.csv",
 }
 
 
@@ -1820,6 +1821,377 @@ def _first_param_reaching(
     return None
 
 
+def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
+    source = csv_dir / CSV_NAMES["exp07"]
+    df = load_csv(source)
+    result = AnalysisResult(
+        "exp07",
+        "Exp07: Structured grammar learning",
+        df is not None,
+        source,
+    )
+    if df is None:
+        return result
+
+    required = [
+        "row_type",
+        "grammar_name",
+        "alphabet_size",
+        "num_dfa_states",
+        "train_max_len",
+        "test_max_len",
+        "transition_coverage_train",
+        "feature_mode",
+        "register_type",
+        "output_mode",
+        "test_string_accuracy",
+        "length_generalization_accuracy",
+        "state_tracking_accuracy",
+        "seen_transition_accuracy",
+        "unseen_transition_accuracy",
+        "masked_topk_accuracy",
+        "topk_k",
+    ]
+    if not _has_required(df, required, "Exp07"):
+        return result
+
+    main = _filter_equal(df, "row_type", "main")
+    topk = _filter_equal(df, "row_type", "topk")
+    length = _filter_equal(df, "row_type", "length")
+    overall = mean_std_min_max(
+        main,
+        ["feature_mode", "register_type", "output_mode"],
+        "test_string_accuracy",
+    )
+    variant_test = mean_sem(
+        main,
+        [
+            "feature_mode",
+            "hidden_dim",
+            "register_type",
+            "output_mode",
+            "write_fraction",
+            "unwritten_mode",
+        ],
+        "test_string_accuracy",
+    )
+    variant_long = mean_sem(
+        main,
+        [
+            "feature_mode",
+            "hidden_dim",
+            "register_type",
+            "output_mode",
+            "write_fraction",
+            "unwritten_mode",
+        ],
+        "length_generalization_accuracy",
+    )
+    variant_autonomous = mean_sem(
+        main,
+        [
+            "feature_mode",
+            "hidden_dim",
+            "register_type",
+            "output_mode",
+            "write_fraction",
+            "unwritten_mode",
+        ],
+        "transition_accuracy_autonomous",
+    )
+    by_grammar = mean_sem(
+        main,
+        ["grammar_name", "feature_mode", "register_type"],
+        "test_string_accuracy",
+    )
+    by_grammar_variant = mean_sem(
+        main,
+        [
+            "grammar_name",
+            "feature_mode",
+            "hidden_dim",
+            "register_type",
+            "output_mode",
+            "write_fraction",
+            "unwritten_mode",
+        ],
+        "test_string_accuracy",
+    )
+    length_summary = mean_sem(
+        length,
+        ["length"],
+        "test_string_accuracy",
+    )
+    coverage_summary = mean_sem(
+        main,
+        ["transition_coverage_train"],
+        "test_string_accuracy",
+    )
+    topk_summary = mean_sem(
+        topk,
+        ["topk_k"],
+        "masked_topk_accuracy",
+    )
+    seen_unseen = mean_sem(
+        main,
+        ["feature_mode", "register_type"],
+        "seen_transition_accuracy",
+    )
+    unseen = mean_sem(
+        main,
+        ["feature_mode", "register_type"],
+        "unseen_transition_accuracy",
+    )
+    hashed_nearest_dense = _filter_many(
+        main,
+        {
+            "feature_mode": "hashed_pair",
+            "register_type": "nearest",
+            "output_mode": "dense",
+        },
+    )
+    hashed_nearest_by_hidden = mean_sem(
+        hashed_nearest_dense,
+        ["hidden_dim"],
+        "test_string_accuracy",
+    )
+    sparse_exact_nearest = _filter_many(
+        main,
+        {
+            "feature_mode": "exact_pair",
+            "register_type": "nearest",
+            "output_mode": "sparse_topk",
+        },
+    )
+    sparse_exact_nearest_rollout = mean_sem(
+        sparse_exact_nearest,
+        ["write_fraction", "unwritten_mode"],
+        "transition_accuracy_autonomous",
+    )
+    incomplete_exact_nearest = _filter_rows(
+        main,
+        lambda row: row.get("feature_mode") == "exact_pair"
+        and row.get("register_type") == "nearest"
+        and row.get("output_mode") == "dense"
+        and (
+            (coverage := _to_float(row.get("transition_coverage_train"))) is not None
+            and coverage < 0.999999
+        ),
+    )
+    incomplete_coverage_summary = mean_sem(
+        incomplete_exact_nearest,
+        ["grammar_name", "transition_coverage_train"],
+        "test_string_accuracy",
+    )
+
+    summary_path = out_dir / "exp07_structured_grammar_learning_summary.csv"
+    result.summary_path = _write_summary(
+        summary_path,
+        [
+            _summary_frame(overall, "overall_by_model"),
+            _summary_frame(variant_test, "variant_test_accuracy"),
+            _summary_frame(variant_long, "variant_length_generalization"),
+            _summary_frame(variant_autonomous, "variant_autonomous_transition_accuracy"),
+            _summary_frame(by_grammar, "by_grammar_model"),
+            _summary_frame(by_grammar_variant, "by_grammar_variant"),
+            _summary_frame(length_summary, "accuracy_by_length"),
+            _summary_frame(coverage_summary, "coverage_vs_accuracy"),
+            _summary_frame(topk_summary, "masked_topk_by_k"),
+            _summary_frame(seen_unseen, "seen_transition_accuracy"),
+            _summary_frame(unseen, "unseen_transition_accuracy"),
+            _summary_frame(hashed_nearest_by_hidden, "hashed_nearest_dense_by_hidden_dim"),
+            _summary_frame(sparse_exact_nearest_rollout, "exact_nearest_sparse_autonomous_rollout"),
+            _summary_frame(incomplete_coverage_summary, "exact_nearest_incomplete_coverage"),
+        ],
+    )
+
+    exact_nearest = _filter_many(
+        main,
+        {
+            "feature_mode": "exact_pair",
+            "register_type": "nearest",
+            "output_mode": "dense",
+        },
+    )
+    mean_test = _mean_metric(exact_nearest, "test_string_accuracy")
+    mean_long = _mean_metric(exact_nearest, "length_generalization_accuracy")
+    mean_tracking = _mean_metric(exact_nearest, "state_tracking_accuracy")
+    mean_coverage = _mean_metric(exact_nearest, "transition_coverage_train")
+    mean_seen = _mean_metric(exact_nearest, "seen_transition_accuracy")
+    mean_unseen = _mean_metric(exact_nearest, "unseen_transition_accuracy")
+    exact_hopfield_dense = _filter_many(
+        main,
+        {
+            "feature_mode": "exact_pair",
+            "register_type": "hopfield",
+            "output_mode": "dense",
+        },
+    )
+    exact_hopfield_test = _mean_metric(exact_hopfield_dense, "test_string_accuracy")
+    exact_hopfield_long = _mean_metric(
+        exact_hopfield_dense,
+        "length_generalization_accuracy",
+    )
+    exact_hopfield_tracking = _mean_metric(
+        exact_hopfield_dense,
+        "state_tracking_accuracy",
+    )
+    hashed_nearest_test = _mean_metric(
+        hashed_nearest_dense,
+        "test_string_accuracy",
+    )
+    hashed_nearest_text = _param_value_text(
+        hashed_nearest_dense,
+        {},
+        "hidden_dim",
+        "test_string_accuracy",
+    )
+    sparse_random_030 = _mean_metric(
+        _filter_many(
+            sparse_exact_nearest,
+            {"write_fraction": 0.30, "unwritten_mode": "random_noise"},
+        ),
+        "transition_accuracy_autonomous",
+    )
+    sparse_random_050 = _mean_metric(
+        _filter_many(
+            sparse_exact_nearest,
+            {"write_fraction": 0.50, "unwritten_mode": "random_noise"},
+        ),
+        "transition_accuracy_autonomous",
+    )
+    sparse_keep_050 = _mean_metric(
+        _filter_many(
+            sparse_exact_nearest,
+            {"write_fraction": 0.50, "unwritten_mode": "keep_current"},
+        ),
+        "transition_accuracy_autonomous",
+    )
+    incomplete_count = len(incomplete_exact_nearest)
+    incomplete_mean_coverage = _mean_metric(
+        incomplete_exact_nearest,
+        "transition_coverage_train",
+    )
+    incomplete_mean_test = _mean_metric(
+        incomplete_exact_nearest,
+        "test_string_accuracy",
+    )
+    first_topk_95 = _first_param_reaching(
+        topk,
+        {},
+        "topk_k",
+        "masked_topk_accuracy",
+        0.95,
+    )
+    first_topk_99 = _first_param_reaching(
+        topk,
+        {},
+        "topk_k",
+        "masked_topk_accuracy",
+        0.99,
+    )
+
+    lines: list[str] = ["## Exp07: Structured grammar learning", ""]
+    lines.extend(
+        [
+            "- Random transition tables test acquisition and capacity, but structured grammars test reusable transition structure.",
+            "- Exact-pair nearest rows are the cleanest test of whether learned DFA transitions support string-level generalization.",
+            "- Exact-pair Hopfield rows test whether the same learned transitions inherit recurrent cleanup limits.",
+            "- Hashed-pair rows test capacity limits in the state-input context layer.",
+            "- Sparse-top-k rows report autonomous rollout accuracy, not only one-step masked cleanup.",
+            "- Transition coverage explains most failures: missing DFA edges lead to systematic autonomous rollout errors.",
+            "- Masked top-k rows test whether sparse visible coordinates can identify the correct next-state basin.",
+            f"- Exact-pair nearest test string accuracy: {_fmt_optional(mean_test)}.",
+            f"- Exact-pair nearest length-generalization accuracy: {_fmt_optional(mean_long)}.",
+            f"- Exact-pair nearest state-tracking accuracy: {_fmt_optional(mean_tracking)}.",
+            f"- Exact-pair Hopfield dense test string accuracy: {_fmt_optional(exact_hopfield_test)}.",
+            f"- Exact-pair Hopfield dense length-generalization accuracy: {_fmt_optional(exact_hopfield_long)}.",
+            f"- Exact-pair Hopfield dense state-tracking accuracy: {_fmt_optional(exact_hopfield_tracking)}.",
+            f"- Hashed-pair nearest dense test accuracy by hidden_dim: {hashed_nearest_text}.",
+            f"- Hashed-pair nearest dense mean test accuracy: {_fmt_optional(hashed_nearest_test)}.",
+            f"- Exact-pair nearest sparse-top-k autonomous transition accuracy at write_fraction=0.30 random_noise: {_fmt_optional(sparse_random_030)}.",
+            f"- Exact-pair nearest sparse-top-k autonomous transition accuracy at write_fraction=0.50 random_noise: {_fmt_optional(sparse_random_050)}.",
+            f"- Exact-pair nearest sparse-top-k autonomous transition accuracy at write_fraction=0.50 keep_current: {_fmt_optional(sparse_keep_050)}.",
+            f"- Mean training transition coverage: {_fmt_optional(mean_coverage)}.",
+            f"- Exact-pair nearest dense incomplete-coverage rows: {incomplete_count}.",
+            f"- Incomplete-coverage mean transition coverage: {_fmt_optional(incomplete_mean_coverage)}.",
+            f"- Incomplete-coverage mean test string accuracy: {_fmt_optional(incomplete_mean_test)}.",
+            f"- Seen/unseen transition accuracy: seen={_fmt_optional(mean_seen)}, unseen={_fmt_optional(mean_unseen)}.",
+            f"- First masked top-k reaching 0.95: {_fmt_threshold(first_topk_95)}.",
+            f"- First masked top-k reaching 0.99: {_fmt_threshold(first_topk_99)}.",
+        ]
+    )
+    if incomplete_count == 0:
+        lines.append(
+            "- No incomplete-coverage exact-pair nearest dense rows were present in this CSV; "
+            "the current Exp07 run used full-transition exposure and covered all Tomita DFA edges."
+        )
+    _add_table(lines, "Overall summary by model", overall, max_rows=40)
+    _add_table(lines, "Variant test accuracy", variant_test, max_rows=80)
+    _add_table(lines, "Variant autonomous transition accuracy", variant_autonomous, max_rows=80)
+    _add_table(lines, "Grammar-level accuracy", by_grammar, max_rows=60)
+    _add_table(lines, "Hashed nearest dense by hidden dimension", hashed_nearest_by_hidden, max_rows=40)
+    _add_table(lines, "Sparse exact-pair nearest autonomous rollout", sparse_exact_nearest_rollout, max_rows=40)
+    _add_table(lines, "Incomplete-coverage exact-pair nearest rows", incomplete_coverage_summary, max_rows=60)
+    _add_table(lines, "Accuracy by length", length_summary, max_rows=40)
+    _add_table(lines, "Masked top-k accuracy", topk_summary, max_rows=40)
+
+    report_path = out_dir / "exp07_structured_grammar_report.md"
+    report_path.write_text("\n".join(["# Exp07 Structured Grammar Report", "", *lines]) + "\n", encoding="utf-8")
+
+    result.markdown_lines = lines
+    result.stdout_line = (
+        f"Exp07: exact_pair nearest test={_fmt_optional(mean_test)}, "
+        f"Hopfield dense={_fmt_optional(exact_hopfield_test)}, "
+        f"length-generalization={_fmt_optional(mean_long)}"
+    )
+    result.paper_values = [
+        f"Exp07 exact_pair nearest test string accuracy: {_fmt_optional(mean_test)}",
+        f"Exp07 exact_pair nearest length-generalization accuracy: {_fmt_optional(mean_long)}",
+        f"Exp07 exact_pair nearest state-tracking accuracy: {_fmt_optional(mean_tracking)}",
+        f"Exp07 exact_pair Hopfield dense test string accuracy: {_fmt_optional(exact_hopfield_test)}",
+        f"Exp07 exact_pair Hopfield dense length-generalization accuracy: {_fmt_optional(exact_hopfield_long)}",
+        f"Exp07 exact_pair Hopfield dense state-tracking accuracy: {_fmt_optional(exact_hopfield_tracking)}",
+        f"Exp07 hashed_pair nearest dense test accuracy by hidden_dim: {hashed_nearest_text}",
+        f"Exp07 exact_pair nearest sparse_topk autonomous transition accuracy at write_fraction=0.30 random_noise: {_fmt_optional(sparse_random_030)}",
+        f"Exp07 exact_pair nearest sparse_topk autonomous transition accuracy at write_fraction=0.50 random_noise: {_fmt_optional(sparse_random_050)}",
+        f"Exp07 exact_pair nearest sparse_topk autonomous transition accuracy at write_fraction=0.50 keep_current: {_fmt_optional(sparse_keep_050)}",
+        f"Exp07 exact_pair nearest transition coverage: {_fmt_optional(mean_coverage)}",
+        f"Exp07 exact_pair nearest incomplete-coverage rows: {incomplete_count}",
+        f"Exp07 exact_pair nearest incomplete-coverage mean test accuracy: {_fmt_optional(incomplete_mean_test)}",
+        f"Exp07 seen/unseen structured transition accuracy: seen={_fmt_optional(mean_seen)}, unseen={_fmt_optional(mean_unseen)}",
+        f"Exp07 first masked top-k reaching 0.95: {_fmt_threshold(first_topk_95)}",
+        f"Exp07 first masked top-k reaching 0.99: {_fmt_threshold(first_topk_99)}",
+    ]
+    result.latex_rows = [
+        (
+            "Exp07",
+            "Structured grammar test accuracy",
+            _fmt_optional(mean_test),
+            "Structured DFA tasks test reusable transition acquisition",
+        ),
+        (
+            "Exp07",
+            "Length generalization accuracy",
+            _fmt_optional(mean_long),
+            "Covered transition graphs generalize beyond training lengths",
+        ),
+        (
+            "Exp07",
+            "Exact-pair Hopfield dense accuracy",
+            _fmt_optional(exact_hopfield_test),
+            "Learned grammar transitions inherit recurrent cleanup limits",
+        ),
+        (
+            "Exp07",
+            "Sparse learned rollout at 30% write",
+            _fmt_optional(sparse_random_030),
+            "Sparse learned writers can drive autonomous grammar transitions",
+        ),
+    ]
+    return result
+
+
 def results_cheat_sheet() -> list[str]:
     return [
         "| Experiment | Main result | Interpretation | Best figure/table |",
@@ -1830,6 +2202,7 @@ def results_cheat_sheet() -> list[str]:
         "| Exp04 | random_noise sparse transitions improve strongly with write fraction; keep_current is harsher. | Sparse basin targeting is possible but may require reset/gating. | fig04b and Exp04 mode-difference table |",
         "| Exp05 | Protocol cases succeed. | Descriptor/payload distinction is operational. | fig05 and Exp05 summary |",
         "| Exp06 | Learned exact-pair transitions acquire demonstrated FSM associations. | Transition maps can be learned from demonstrations but inherit interface and cleanup capacity limits. | fig08-fig11 and Exp06 summary |",
+        "| Exp07 | Structured grammar tasks test length generalization once DFA transitions are covered. | Reusable transition structure can support unseen strings, unlike random FSM tables. | fig12-fig16 and Exp07 report |",
     ]
 
 
@@ -1841,6 +2214,7 @@ def collect_results(csv_dir: Path, out_dir: Path) -> list[AnalysisResult]:
         analyze_exp04,
         analyze_exp05,
         analyze_exp06,
+        analyze_exp07,
     ]
     return [analysis(csv_dir, out_dir) for analysis in analyses]
 
