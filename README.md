@@ -1,8 +1,12 @@
 # BioLogic State Machine Simulations
 
-This repository contains reproducible simulations for BioLogic-style state machines built from high-dimensional bipolar state vectors. The experiments test exact finite-state transition construction, ideal nearest-attractor cleanup, Hopfield-style recurrent cleanup, sparse partial writes, a descriptor/payload protocol witness, learned transition acquisition from demonstrations, and structured grammar generalization.
+This repository contains reproducible simulations for BioLogic-style finite-state machines built from high-dimensional bipolar state vectors. The code separates core mechanisms from experiment sweeps:
 
-The code is meant to support paper figures and Results-section numbers. Running the plotting and statistics scripts never reruns experiments; they only read the CSV files already present in `results/csv/`.
+- core modules in `biologic/` implement state encodings, finite-state machines, cleanup registers, transition writers, descriptor/payload logic, associative learning, and DFA-backed grammar tasks;
+- experiment modules in `experiments/` generate CSV outputs under `results/csv/`;
+- scripts in `scripts/` read existing CSVs to generate figures, tables, and statistics reports.
+
+Plotting and statistics scripts do not rerun simulations. They treat `results/csv/` as fixed input.
 
 ## Installation
 
@@ -17,44 +21,41 @@ Runtime dependencies are `numpy`, `pandas`, `matplotlib`, and `tqdm`. The dev ex
 ## Repository Layout
 
 ```text
-biologic/      Core state-vector, register, transition, FSM, and descriptor code
-experiments/   Reproducible experiment entry points and multiprocessing helpers
-scripts/       Figure generation and statistics/report generation scripts
-tests/         Unit tests for the core mechanics
-results/csv/   Experiment CSV outputs consumed by plotting/statistics scripts
+biologic/      Core implementation
+experiments/   Reproducible experiment entry points
+scripts/       Plotting and statistics scripts
+tests/         Unit tests
+results/csv/   Experiment CSV outputs
+results/figures/ Generated PDF/PNG figures
+results/tables/  Generated LaTeX tables
+results/statistics/ Generated reports and summary CSVs
 ```
 
-The most important core modules are:
+Important core modules:
 
-- `biologic/encodings.py`: bipolar vector generation and overlap utilities.
-- `biologic/fsm.py`: a small typed finite-state machine abstraction.
-- `biologic/register.py`: nearest-attractor and Hopfield register cleanup.
-- `biologic/transition.py`: exact and sparse transition mechanisms.
-- `biologic/learning.py`: local associative transition learning from state-input demonstrations.
-- `biologic/grammars.py`: DFA-backed regular grammar tasks, including custom languages, Tomita grammars, and Reber grammar.
-- `biologic/sequence_eval.py`: autonomous learned-state sequence rollout, string-level evaluation, and masked top-k cleanup.
-- `biologic/descriptors.py`: descriptor/payload protocol helpers.
-- `biologic/metrics.py`: shared accuracy and recovery metrics.
-
-The experiment modules are intentionally separate from the core logic. That keeps the paper sweeps, parameter grids, and CSV writing code out of the implementation being tested.
+| Module | Role |
+| --- | --- |
+| `biologic/encodings.py` | Bipolar codebook generation and overlap utilities. |
+| `biologic/fsm.py` | Typed finite-state machine abstraction. |
+| `biologic/register.py` | Nearest-attractor and Hopfield cleanup. |
+| `biologic/transition.py` | Constructed exact and sparse transition mechanisms. |
+| `biologic/learning.py` | Local associative transition learning from state-input demonstrations. |
+| `biologic/grammars.py` | DFA-backed structured grammar tasks: custom/MLReg-style tasks, Tomita grammars, and Reber grammar. |
+| `biologic/sequence_eval.py` | Autonomous learned-state rollout, string-level evaluation, and masked top-k cleanup. |
+| `biologic/descriptors.py` | Descriptor/payload protocol witness helpers. |
+| `biologic/metrics.py` | Shared accuracy and recovery metrics. |
 
 ## Experiments
 
-| Experiment | File | Purpose |
+| Experiment | Module | Main output CSV |
 | --- | --- | --- |
-| Exp01 | `experiments/exp01_transition_accuracy.py` | Tests exact transition realization under nearest and Hopfield cleanup. |
-| Exp02 | `experiments/exp02_noise_recovery.py` | Measures recovery from bit-flip corruption. |
-| Exp03 | `experiments/exp03_capacity.py` | Sweeps capacity ratio and compares Hopfield behavior to the classical capacity reference. |
-| Exp04 | `experiments/exp04_sparse_transitions.py` | Tests sparse transition writes under `keep_current` and `random_noise` modes. |
-| Exp05 | `experiments/exp05_descriptor_payload.py` | Demonstrates descriptor/payload separation as an executable protocol witness. |
-| Exp06 | `experiments/exp06_learned_transitions.py` | Learns transition associations from demonstrated current-state, input, and next-state examples. |
-| Exp07 | `experiments/exp07_structured_grammar_learning.py` | Trains on strings from structured regular grammars and tests length generalization. |
-
-For Exp04, the two modes should not be averaged together. `keep_current` measures sparse writes against old-state inertia. `random_noise` measures whether partial target writes bias the system into the target basin.
-
-Exp06 uses Interface-Conditioned Eligibility Transition Learning. The learner sees demonstrations of a current state plus input/descriptor followed by an observed next state, then updates pair-to-state weights using a local associative eligibility rule. The learner module does not accept an FSM or transition table; the experiment code uses the FSM only to generate demonstrations and evaluate the learned behavior.
-
-Exp07 replaces random transition tables with structured finite-state languages. It trains from DFA traces of strings, then evaluates autonomous accept/reject behavior, internal state tracking, transition coverage, length generalization, and masked top-k sparse cleanup. This is the experiment to use when the question is rule reuse on unseen strings rather than memorization of arbitrary transition triples.
+| Exp01 transition accuracy | `experiments.exp01_transition_accuracy` | `results/csv/exp01_transition_accuracy.csv` |
+| Exp02 noise recovery | `experiments.exp02_noise_recovery` | `results/csv/exp02_noise_recovery.csv` |
+| Exp03 capacity sweep | `experiments.exp03_capacity` | `results/csv/exp03_capacity.csv` |
+| Exp04 sparse transitions | `experiments.exp04_sparse_transitions` | `results/csv/exp04_sparse_transitions.csv` |
+| Exp05 descriptor/payload witness | `experiments.exp05_descriptor_payload` | `results/csv/exp05_descriptor_payload.csv` |
+| Exp06 learned transitions | `experiments.exp06_learned_transitions` | `results/csv/exp06_learned_transitions.csv` |
+| Exp07 structured grammar learning | `experiments.exp07_structured_grammar_learning` | `results/csv/exp07_structured_grammar_learning.csv` |
 
 ## Running Tests
 
@@ -62,45 +63,74 @@ Exp07 replaces random transition tables with structured finite-state languages. 
 pytest
 ```
 
+For the grammar and learning code only:
+
+```bash
+pytest tests/test_learning.py tests/test_grammars.py tests/test_exp07_sequence_learning.py
+```
+
 ## Running Experiments
 
-Quick smoke run:
+Run all experiments:
 
 ```bash
 python -m experiments.run_all --quick --jobs 4
-```
-
-Full run using all available CPU cores:
-
-```bash
 python -m experiments.run_all --full --jobs 0
 ```
 
-`--jobs 0` uses all CPUs. Each individual experiment also accepts `--jobs`. The parallelism is process-based because the experiment conditions are independent.
-Exp07 caps its own worker pool at four processes to avoid excessive RAM use from sequence datasets when `--jobs 0` is used.
-For harder Exp07-only runs, use `--advanced --jobs 0 --max-workers 0 --total-memory-gb <budget>` to use all cores while dividing a total memory budget across workers.
+`--jobs 0` uses all available CPU cores. Experiment conditions are independent, so parallelism is process-based.
 
-`run_all.py` runs Exp01 through Exp06. Exp06 can also be run directly when iterating on the learned-transition sweep:
+Individual experiment entry points use the descriptive module names shown in the experiment table. Exp01-Exp05 run full settings by default and accept `--quick` for reduced settings:
 
 ```bash
-python -m experiments.run_all --quick --jobs 0
-python -m experiments.exp06_learned_transitions --quick --jobs 0
-python -m experiments.exp06_learned_transitions --full --jobs 0
-python -m experiments.exp07_structured_grammar_learning --quick --jobs 0
-python -m experiments.exp07_structured_grammar_learning --task tomita --quick
-python -m experiments.exp07_structured_grammar_learning --task custom --full --jobs 0
-python -m experiments.exp07_structured_grammar_learning --advanced --jobs 0 --max-workers 0 --total-memory-gb 48
+python -m experiments.exp01_transition_accuracy --quick --jobs 0
+python -m experiments.exp01_transition_accuracy --jobs 0
+
+python -m experiments.exp02_noise_recovery --quick --jobs 0
+python -m experiments.exp03_capacity --quick --jobs 0
+python -m experiments.exp04_sparse_transitions --quick --jobs 0
+python -m experiments.exp05_descriptor_payload --quick --jobs 0
 ```
 
-CSV outputs are written to:
+The larger learned-transition and grammar-learning modules use explicit quick/full modes:
+
+```bash
+python -m experiments.exp06_learned_transitions --quick --jobs 0
+python -m experiments.exp06_learned_transitions --full --jobs 0
+
+python -m experiments.exp07_structured_grammar_learning --quick --jobs 0
+python -m experiments.exp07_structured_grammar_learning --full --jobs 0
+python -m experiments.exp07_structured_grammar_learning --full --jobs 0 --continue
+```
+
+All experiment runners print progress with completed conditions, percent, throughput, and ETA.
+For Exp07, `--continue` resumes from the existing CSV by skipping completed main rows and appending the missing conditions.
+
+## Background Runs
+
+For long SSH sessions, use the systemd wrapper instead of relying on an open terminal:
+
+```bash
+scripts/run_exp07_full_background.sh
+systemctl --user status exp07-full.service
+tail -f results/logs/exp07_full.log
+```
+
+Stop the service:
+
+```bash
+systemctl --user stop exp07-full.service
+```
+
+The background wrapper writes the same Exp07 CSV as the foreground command:
 
 ```text
-results/csv/
+results/csv/exp07_structured_grammar_learning.csv
 ```
 
 ## Generating Figures
 
-The plotting script reads existing CSV files from `results/csv/` and writes paper-quality Matplotlib figures. It does not rerun simulations.
+The plotting script reads existing CSVs and writes both paper-quality PDFs and PNGs by default:
 
 ```bash
 python scripts/plot_results.py
@@ -109,42 +139,18 @@ python scripts/plot_results.py --format png
 python scripts/plot_results.py --format both
 ```
 
-The default is `--format both`. Figures are written to:
+Outputs:
 
 ```text
 results/figures/
-```
-
-The plotting script also writes:
-
-```text
 results/tables/simulation_summary.tex
 ```
 
-Current paper figure stems are `fig01_*` through `fig16_*`. Figures `fig08_*` through `fig11_*` come from Exp06:
-
-```text
-fig08_learned_transition_accuracy
-fig09_pair_layer_capacity
-fig10_learned_sparse_transitions
-fig11_coverage_seen_unseen
-```
-
-Figures `fig12_*` through `fig16_*` come from Exp07:
-
-```text
-fig12_tomita_generalization
-fig13_length_generalization
-fig14_transition_coverage_vs_accuracy
-fig15_topk_bound
-fig16_seen_unseen_structured
-```
-
-Older unnumbered `fig_transition_*`, `fig_noise_*`, `fig_capacity_*`, `fig_sparse_*`, and `fig_descriptor_*` files are legacy outputs from an earlier plotting pass.
+The numbered paper figure stems are `fig01_*` through `fig16_*`. Older unnumbered `fig_transition_*`, `fig_noise_*`, `fig_capacity_*`, `fig_sparse_*`, and `fig_descriptor_*` files are legacy outputs from an earlier plotting pass.
 
 ## Generating Statistics
 
-The statistics script reads existing CSV files and produces summaries for the paper Results section. It does not rerun simulations.
+The statistics script reads existing CSVs and writes paper-facing summaries. It does not rerun experiments.
 
 ```bash
 python scripts/statistics.py
@@ -152,9 +158,9 @@ python scripts/statistics.py --csv-dir results/csv --out-dir results/statistics
 python scripts/statistics.py --paper-only
 ```
 
-`--paper-only` prints the extracted paper-ready values to stdout while still writing the report files.
+`--paper-only` prints the extracted paper-ready values to stdout while still writing report files.
 
-Statistics outputs:
+Main outputs:
 
 ```text
 results/statistics/statistics_report.md
@@ -170,11 +176,11 @@ results/statistics/exp07_structured_grammar_report.md
 results/tables/simulation_statistics_table.tex
 ```
 
-## Reproducibility Notes
+## Reproducibility
 
-The simulations use deterministic `numpy.random.default_rng(seed)` generators. Experiment scripts write CSVs; plotting and statistics scripts treat those CSVs as fixed inputs. This separation makes it possible to regenerate paper figures and tables without accidentally changing the underlying simulation data.
+Experiments use deterministic `numpy.random.default_rng(seed)` generators. The CSVs are the boundary between simulation and paper artifacts: regenerate CSVs when changing experiments, then regenerate figures/statistics from those CSVs.
 
-If a CSV is missing, the plotting and statistics scripts print a warning and continue with the files that are available.
+Plotting and statistics scripts warn and continue if an expected CSV is missing.
 
 ## Typical Paper Workflow
 
@@ -186,4 +192,10 @@ python scripts/statistics.py
 python scripts/statistics.py --paper-only
 ```
 
-Use the generated figures in `results/figures/`, the LaTeX tables in `results/tables/`, and the narrative/statistical details in `results/statistics/statistics_report.md`.
+Use:
+
+```text
+results/figures/      PDF/PNG figures
+results/tables/       LaTeX tables
+results/statistics/   Markdown/TXT reports and summary CSVs
+```

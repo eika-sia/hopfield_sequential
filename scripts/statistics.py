@@ -1840,6 +1840,7 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         "num_dfa_states",
         "train_max_len",
         "test_max_len",
+        "regime",
         "transition_coverage_train",
         "feature_mode",
         "register_type",
@@ -1856,16 +1857,28 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         return result
 
     main = _filter_equal(df, "row_type", "main")
-    topk = _filter_equal(df, "row_type", "topk")
-    length = _filter_equal(df, "row_type", "length")
+    full_main = _filter_equal(main, "regime", "full_transition_exposure")
+    limited_main = _filter_equal(main, "regime", "limited_string_exposure")
+    dense_full_main = _filter_equal(full_main, "output_mode", "dense")
+    topk = _filter_equal(
+        _filter_equal(df, "row_type", "topk"),
+        "regime",
+        "full_transition_exposure",
+    )
+    length = _filter_equal(
+        _filter_equal(df, "row_type", "length"),
+        "regime",
+        "full_transition_exposure",
+    )
     overall = mean_std_min_max(
-        main,
-        ["feature_mode", "register_type", "output_mode"],
+        full_main,
+        ["regime", "feature_mode", "register_type", "output_mode"],
         "test_string_accuracy",
     )
     variant_test = mean_sem(
-        main,
+        full_main,
         [
+            "regime",
             "feature_mode",
             "hidden_dim",
             "register_type",
@@ -1876,8 +1889,9 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         "test_string_accuracy",
     )
     variant_long = mean_sem(
-        main,
+        full_main,
         [
+            "regime",
             "feature_mode",
             "hidden_dim",
             "register_type",
@@ -1888,8 +1902,9 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         "length_generalization_accuracy",
     )
     variant_autonomous = mean_sem(
-        main,
+        full_main,
         [
+            "regime",
             "feature_mode",
             "hidden_dim",
             "register_type",
@@ -1900,13 +1915,14 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         "transition_accuracy_autonomous",
     )
     by_grammar = mean_sem(
-        main,
-        ["grammar_name", "feature_mode", "register_type"],
+        dense_full_main,
+        ["regime", "grammar_name", "feature_mode", "register_type"],
         "test_string_accuracy",
     )
     by_grammar_variant = mean_sem(
-        main,
+        full_main,
         [
+            "regime",
             "grammar_name",
             "feature_mode",
             "hidden_dim",
@@ -1924,7 +1940,7 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
     )
     coverage_summary = mean_sem(
         main,
-        ["transition_coverage_train"],
+        ["regime", "transition_coverage_train"],
         "test_string_accuracy",
     )
     topk_summary = mean_sem(
@@ -1934,16 +1950,16 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
     )
     seen_unseen = mean_sem(
         main,
-        ["feature_mode", "register_type"],
+        ["regime", "feature_mode", "register_type"],
         "seen_transition_accuracy",
     )
     unseen = mean_sem(
         main,
-        ["feature_mode", "register_type"],
+        ["regime", "feature_mode", "register_type"],
         "unseen_transition_accuracy",
     )
     hashed_nearest_dense = _filter_many(
-        main,
+        full_main,
         {
             "feature_mode": "hashed_pair",
             "register_type": "nearest",
@@ -1956,7 +1972,7 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         "test_string_accuracy",
     )
     sparse_exact_nearest = _filter_many(
-        main,
+        full_main,
         {
             "feature_mode": "exact_pair",
             "register_type": "nearest",
@@ -1969,7 +1985,7 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         "transition_accuracy_autonomous",
     )
     incomplete_exact_nearest = _filter_rows(
-        main,
+        limited_main,
         lambda row: row.get("feature_mode") == "exact_pair"
         and row.get("register_type") == "nearest"
         and row.get("output_mode") == "dense"
@@ -2006,7 +2022,15 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
     )
 
     exact_nearest = _filter_many(
-        main,
+        full_main,
+        {
+            "feature_mode": "exact_pair",
+            "register_type": "nearest",
+            "output_mode": "dense",
+        },
+    )
+    limited_exact_nearest = _filter_many(
+        limited_main,
         {
             "feature_mode": "exact_pair",
             "register_type": "nearest",
@@ -2019,8 +2043,13 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
     mean_coverage = _mean_metric(exact_nearest, "transition_coverage_train")
     mean_seen = _mean_metric(exact_nearest, "seen_transition_accuracy")
     mean_unseen = _mean_metric(exact_nearest, "unseen_transition_accuracy")
+    limited_mean_seen = _mean_metric(limited_exact_nearest, "seen_transition_accuracy")
+    limited_mean_unseen = _mean_metric(
+        limited_exact_nearest,
+        "unseen_transition_accuracy",
+    )
     exact_hopfield_dense = _filter_many(
-        main,
+        full_main,
         {
             "feature_mode": "exact_pair",
             "register_type": "hopfield",
@@ -2099,6 +2128,7 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
             "- Exact-pair Hopfield rows test whether the same learned transitions inherit recurrent cleanup limits.",
             "- Hashed-pair rows test capacity limits in the state-input context layer.",
             "- Sparse-top-k rows report autonomous rollout accuracy, not only one-step masked cleanup.",
+            "- Full-transition and limited-exposure regimes are reported separately to avoid mixing complete-coverage success with coverage-failure rows.",
             "- Transition coverage explains most failures: missing DFA edges lead to systematic autonomous rollout errors.",
             "- Masked top-k rows test whether sparse visible coordinates can identify the correct next-state basin.",
             f"- Exact-pair nearest test string accuracy: {_fmt_optional(mean_test)}.",
@@ -2117,6 +2147,7 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
             f"- Incomplete-coverage mean transition coverage: {_fmt_optional(incomplete_mean_coverage)}.",
             f"- Incomplete-coverage mean test string accuracy: {_fmt_optional(incomplete_mean_test)}.",
             f"- Seen/unseen transition accuracy: seen={_fmt_optional(mean_seen)}, unseen={_fmt_optional(mean_unseen)}.",
+            f"- Limited-exposure seen/unseen transition accuracy: seen={_fmt_optional(limited_mean_seen)}, unseen={_fmt_optional(limited_mean_unseen)}.",
             f"- First masked top-k reaching 0.95: {_fmt_threshold(first_topk_95)}.",
             f"- First masked top-k reaching 0.99: {_fmt_threshold(first_topk_99)}.",
         ]
@@ -2160,6 +2191,7 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
         f"Exp07 exact_pair nearest incomplete-coverage rows: {incomplete_count}",
         f"Exp07 exact_pair nearest incomplete-coverage mean test accuracy: {_fmt_optional(incomplete_mean_test)}",
         f"Exp07 seen/unseen structured transition accuracy: seen={_fmt_optional(mean_seen)}, unseen={_fmt_optional(mean_unseen)}",
+        f"Exp07 limited-exposure seen/unseen structured transition accuracy: seen={_fmt_optional(limited_mean_seen)}, unseen={_fmt_optional(limited_mean_unseen)}",
         f"Exp07 first masked top-k reaching 0.95: {_fmt_threshold(first_topk_95)}",
         f"Exp07 first masked top-k reaching 0.99: {_fmt_threshold(first_topk_99)}",
     ]

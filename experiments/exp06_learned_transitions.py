@@ -533,7 +533,12 @@ def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
     print(
         f"Running experiment 6: learned transitions ({len(conditions)} training conditions, jobs={jobs})..."
     )
-    nested_rows: list[list[Row]] = parallel_map(_run_condition, conditions, jobs=jobs)
+    nested_rows: list[list[Row]] = parallel_map(
+        _run_condition,
+        conditions,
+        jobs=jobs,
+        progress_label="Exp06 learned transitions",
+    )
     rows: list[Row] = [row for condition_rows in nested_rows for row in condition_rows]
     df = pd.DataFrame(rows)
     csv_path = save_csv(df, "exp06_learned_transitions.csv")

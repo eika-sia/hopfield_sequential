@@ -11,8 +11,10 @@ import numpy as np
 
 SymbolString = list[str]
 LabeledString = tuple[SymbolString, bool]
+CachedLabeledString = tuple[tuple[str, ...], bool]
 PositiveSampler = Callable[[tuple[int, int], np.random.Generator], SymbolString]
 MAX_EXHAUSTIVE_STRINGS: int = 250_000
+_ENUMERATION_CACHE: dict[tuple[str, int], tuple[CachedLabeledString, ...]] = {}
 
 
 def _search_size(alphabet_size: int, max_len: int) -> int:
@@ -141,8 +143,8 @@ class GrammarTask:
         search_size = _search_size(len(self.alphabet), max_len)
         if search_size <= MAX_EXHAUSTIVE_STRINGS and self.positive_sampler is None:
             candidates = [
-                (symbols, label)
-                for symbols, label in self.enumerate_strings(max_len)
+                (list(symbols), label)
+                for symbols, label in _cached_enumeration(self, max_len)
                 if len(symbols) >= min_len
             ]
             positives = [item for item in candidates if item[1]]
@@ -226,12 +228,27 @@ class GrammarTask:
             raise RuntimeError("label is too rare for random sampling")
         candidates = [
             symbols
-            for symbols, label in self.enumerate_strings(max_len)
+            for symbols, label in _cached_enumeration(self, max_len)
             if len(symbols) >= length_range[0] and label == accepted
         ]
         if not candidates:
             raise RuntimeError("no strings with requested label in length range")
-        return candidates[int(rng.integers(0, len(candidates)))]
+        return list(candidates[int(rng.integers(0, len(candidates)))])
+
+
+def _cached_enumeration(
+    task: GrammarTask,
+    max_len: int,
+) -> tuple[CachedLabeledString, ...]:
+    key = (task.name, max_len)
+    cached = _ENUMERATION_CACHE.get(key)
+    if cached is None:
+        cached = tuple(
+            (tuple(symbols), label)
+            for symbols, label in task.enumerate_strings(max_len)
+        )
+        _ENUMERATION_CACHE[key] = cached
+    return cached
 
 
 def _complete_with_dead(
@@ -624,7 +641,8 @@ def strings_covering_transitions(
     required = {(state, symbol) for state in reachable for symbol in task.alphabet}
     covered: set[tuple[str, str]] = set()
     if _search_size(len(task.alphabet), length_range[1]) <= MAX_EXHAUSTIVE_STRINGS:
-        for symbols, _label in task.enumerate_strings(length_range[1]):
+        for cached_symbols, _label in _cached_enumeration(task, length_range[1]):
+            symbols = list(cached_symbols)
             if len(symbols) < length_range[0]:
                 continue
             before = len(covered)

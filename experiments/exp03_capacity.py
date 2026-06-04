@@ -69,7 +69,12 @@ def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
     print(
         f"Running experiment 3: capacity ({len(conditions)} conditions, jobs={jobs})..."
     )
-    rows: list[Row] = parallel_map(_run_condition, conditions, jobs=jobs)
+    rows: list[Row] = parallel_map(
+        _run_condition,
+        conditions,
+        jobs=jobs,
+        progress_label="Exp03 capacity",
+    )
     df: pd.DataFrame = pd.DataFrame(rows)
     csv_path = save_csv(df, "exp03_capacity.csv")
     figure_paths: list[Path] = plot_capacity(df)

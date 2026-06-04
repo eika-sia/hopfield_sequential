@@ -105,7 +105,12 @@ def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
     print(
         f"Running experiment 4: sparse transitions ({len(conditions)} conditions, jobs={jobs})..."
     )
-    rows: list[Row] = parallel_map(_run_condition, conditions, jobs=jobs)
+    rows: list[Row] = parallel_map(
+        _run_condition,
+        conditions,
+        jobs=jobs,
+        progress_label="Exp04 sparse transitions",
+    )
     df: pd.DataFrame = pd.DataFrame(rows)
     csv_path = save_csv(df, "exp04_sparse_transitions.csv")
     figure_paths: list[Path] = plot_sparse_transitions(df)

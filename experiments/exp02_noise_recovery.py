@@ -69,7 +69,12 @@ def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
     )
     rows: list[Row] = [
         row
-        for group in parallel_map(_run_condition, conditions, jobs=jobs)
+        for group in parallel_map(
+            _run_condition,
+            conditions,
+            jobs=jobs,
+            progress_label="Exp02 noise recovery",
+        )
         for row in group
     ]
     df: pd.DataFrame = pd.DataFrame(rows)

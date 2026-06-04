@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
 
 import numpy as np
@@ -57,6 +57,21 @@ class BioLogicSequenceLearner:
     unwritten_mode: UnwrittenMode = "random_noise"
     update_rule: UpdateRule = "delta"
     learning_rate: float = 1.0
+    _transition_table_cache: np.ndarray | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _oracle_transition_table_cache: np.ndarray | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _encoded_string_cache: dict[int, dict[int, np.ndarray]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.state_to_idx = {
@@ -112,28 +127,25 @@ class BioLogicSequenceLearner:
         train_strings: Sequence[list[str]],
         epochs: int,
         shuffle: bool = True,
+        deduplicate_transitions: bool = False,
     ) -> None:
         """Train from oracle DFA traces through local transition updates."""
-        examples = self._trace_examples(train_strings)
+        examples = self._trace_examples(
+            train_strings,
+            deduplicate_transitions=deduplicate_transitions,
+        )
         for _ in range(epochs):
             self.learner.train_epoch(examples, rng=self.rng, shuffle=shuffle)
+        self._transition_table_cache = None
 
     def predict_trace(self, symbols: list[str]) -> list[int]:
         """Run the learned transition model autonomously and return state indices."""
+        transition_table = self._transition_table()
         current_idx = self.state_to_idx[self.task.dfa.start_state]
         trace = [current_idx]
-        current_vec = self.state_codebook[current_idx]
         for symbol in symbols:
             input_idx = self.symbol_to_idx[symbol]
-            input_vec = self.input_codebook[input_idx]
-            proposal = self.writer.propose(
-                current_vec,
-                input_vec,
-                self.encoder,
-                current_idx,
-                input_idx,
-            )
-            current_idx, current_vec = self.register.cleanup(proposal)
+            current_idx = int(transition_table[current_idx, input_idx])
             trace.append(current_idx)
         return trace
 
@@ -160,6 +172,12 @@ class BioLogicSequenceLearner:
                 "extracted_transition_table_accuracy": math.nan,
             }
 
+        learned_table = self._transition_table()
+        oracle_table = self._oracle_transition_table()
+        start_idx = self.state_to_idx[self.task.dfa.start_state]
+        accept_mask = self._accept_mask()
+        valid_next_score_table = self._valid_next_score_table(learned_table)
+
         string_correct = 0
         accept_correct = 0
         accept_total = 0
@@ -172,37 +190,44 @@ class BioLogicSequenceLearner:
         teacher_total = 0
         autonomous_correct = 0
         autonomous_total = 0
-        valid_next_scores: list[float] = []
+        valid_next_score_sum = 0.0
+        valid_next_total = 0
 
-        for symbols in strings:
-            true_trace_names = self.task.dfa.trace(symbols)
-            true_trace = [self.state_to_idx[state] for state in true_trace_names]
-            pred_trace = self.predict_trace(symbols)
-            predicted_accept = self.idx_to_state[pred_trace[-1]] in self.task.dfa.accept_states
-            true_accept = true_trace_names[-1] in self.task.dfa.accept_states
-            string_correct += int(predicted_accept == true_accept)
-            if true_accept:
-                accept_total += 1
-                accept_correct += int(predicted_accept == true_accept)
-            else:
-                reject_total += 1
-                reject_correct += int(predicted_accept == true_accept)
-            final_correct += int(pred_trace[-1] == true_trace[-1])
-            for pred_idx, true_idx in zip(pred_trace[1:], true_trace[1:]):
-                tracked_correct += int(pred_idx == true_idx)
-                tracked_total += 1
-            for step_idx, symbol in enumerate(symbols):
-                input_idx = self.symbol_to_idx[symbol]
-                true_current_idx = true_trace[step_idx]
-                true_next_idx = true_trace[step_idx + 1]
-                teacher_pred = self._transition_step(true_current_idx, input_idx)
-                teacher_correct += int(teacher_pred == true_next_idx)
-                teacher_total += 1
-                autonomous_correct += int(pred_trace[step_idx + 1] == true_next_idx)
-                autonomous_total += 1
-                valid_next_scores.append(
-                    self._valid_next_symbol_score(true_current_idx, true_next_idx)
+        for encoded in self._encoded_groups(strings).values():
+            count, length = encoded.shape
+            true_idx = np.full(count, start_idx, dtype=int)
+            pred_idx = np.full(count, start_idx, dtype=int)
+            for column in range(length):
+                input_idx = encoded[:, column]
+                true_next_idx = oracle_table[true_idx, input_idx]
+                pred_next_idx = learned_table[pred_idx, input_idx]
+                teacher_pred = learned_table[true_idx, input_idx]
+
+                tracked_correct += int(np.count_nonzero(pred_next_idx == true_next_idx))
+                teacher_correct += int(np.count_nonzero(teacher_pred == true_next_idx))
+                autonomous_correct += int(np.count_nonzero(pred_next_idx == true_next_idx))
+                tracked_total += count
+                teacher_total += count
+                autonomous_total += count
+                valid_next_score_sum += float(
+                    np.sum(valid_next_score_table[true_idx, true_next_idx])
                 )
+                valid_next_total += count
+
+                true_idx = true_next_idx
+                pred_idx = pred_next_idx
+
+            predicted_accept = accept_mask[pred_idx]
+            true_accept = accept_mask[true_idx]
+            correct = predicted_accept == true_accept
+            string_correct += int(np.count_nonzero(correct))
+            accept_selector = true_accept
+            reject_selector = ~true_accept
+            accept_total += int(np.count_nonzero(accept_selector))
+            reject_total += int(np.count_nonzero(reject_selector))
+            accept_correct += int(np.count_nonzero(correct & accept_selector))
+            reject_correct += int(np.count_nonzero(correct & reject_selector))
+            final_correct += int(np.count_nonzero(pred_idx == true_idx))
 
         extracted = self.extracted_transition_table_accuracy()
         return {
@@ -224,7 +249,9 @@ class BioLogicSequenceLearner:
                 autonomous_correct / autonomous_total if autonomous_total else math.nan
             ),
             "valid_next_symbol_accuracy": (
-                float(np.mean(valid_next_scores)) if valid_next_scores else math.nan
+                valid_next_score_sum / valid_next_total
+                if valid_next_total
+                else math.nan
             ),
             "extracted_transition_table_accuracy": extracted,
         }
@@ -234,67 +261,82 @@ class BioLogicSequenceLearner:
         strings: Sequence[list[str]],
     ) -> dict[int, float]:
         """Return accept/reject accuracy for each string length."""
-        groups: dict[int, list[float]] = {}
-        for symbols in strings:
-            length = len(symbols)
-            groups.setdefault(length, [])
-            groups[length].append(
-                float(self.predict_accept(symbols) == self.task.dfa.accepts(symbols))
-            )
-        return {length: float(np.mean(values)) for length, values in groups.items()}
+        start_idx = self.state_to_idx[self.task.dfa.start_state]
+        learned_table = self._transition_table()
+        oracle_table = self._oracle_transition_table()
+        accept_mask = self._accept_mask()
+        results: dict[int, float] = {}
+        for length, encoded in self._encoded_groups(strings).items():
+            count = encoded.shape[0]
+            pred_idx = np.full(count, start_idx, dtype=int)
+            true_idx = np.full(count, start_idx, dtype=int)
+            for column in range(length):
+                input_idx = encoded[:, column]
+                pred_idx = learned_table[pred_idx, input_idx]
+                true_idx = oracle_table[true_idx, input_idx]
+            results[length] = float(np.mean(accept_mask[pred_idx] == accept_mask[true_idx]))
+        return results
 
     def topk_masked_transition_accuracy(self, k_values: Sequence[int]) -> dict[int, float]:
         """Evaluate one-step transition recovery using top-k visible coordinates."""
-        masked = MaskedNearestRegister(self.state_codebook)
-        results: dict[int, float] = {}
-        for k in k_values:
-            correct = 0
-            total = 0
-            for state, symbol, target in self.task.dfa.transition_items():
-                state_idx = self.state_to_idx[state]
-                input_idx = self.symbol_to_idx[symbol]
-                target_idx = self.state_to_idx[target]
-                phi = self.encoder.encode(
-                    self.state_codebook[state_idx],
-                    self.input_codebook[input_idx],
-                    state_idx,
-                    input_idx,
-                )
-                raw = self.writer.raw(phi)
-                proposal = sign(raw)
-                mask = np.zeros(self.state_dim, dtype=bool)
-                n_write = min(max(0, k), self.state_dim)
-                if n_write > 0:
-                    mask[np.argsort(np.abs(raw))[-n_write:]] = True
-                pred_idx, _ = masked.cleanup_masked(proposal, mask)
-                correct += int(pred_idx == target_idx)
-                total += 1
-            results[int(k)] = correct / total if total else math.nan
-        return results
-
-    def extracted_transition_table_accuracy(self) -> float:
-        """Evaluate all DFA transitions under teacher-forced current state."""
-        correct = 0
+        sorted_k = sorted({int(k) for k in k_values})
+        correct_by_k = {k: 0 for k in sorted_k}
         total = 0
         for state, symbol, target in self.task.dfa.transition_items():
             state_idx = self.state_to_idx[state]
             input_idx = self.symbol_to_idx[symbol]
             target_idx = self.state_to_idx[target]
-            correct += int(self._transition_step(state_idx, input_idx) == target_idx)
+            phi = self.encoder.encode(
+                self.state_codebook[state_idx],
+                self.input_codebook[input_idx],
+                state_idx,
+                input_idx,
+            )
+            raw = self.writer.raw(phi)
+            proposal = sign(raw)
+            order = np.argsort(np.abs(raw))[::-1]
+            scores = np.zeros(self.task.dfa.num_states, dtype=float)
+            visible_count = 0
+            for k in sorted_k:
+                n_write = min(max(0, k), self.state_dim)
+                if n_write > visible_count:
+                    indices = order[visible_count:n_write]
+                    scores += self.state_codebook[:, indices] @ proposal[indices]
+                    visible_count = n_write
+                correct_by_k[k] += int(int(np.argmax(scores)) == target_idx)
             total += 1
-        return correct / total if total else math.nan
+        results: dict[int, float] = {}
+        for k in sorted_k:
+            results[k] = correct_by_k[k] / total if total else math.nan
+        return results
+
+    def extracted_transition_table_accuracy(self) -> float:
+        """Evaluate all DFA transitions under teacher-forced current state."""
+        learned_table = self._transition_table()
+        oracle_table = self._oracle_transition_table()
+        if learned_table.size == 0:
+            return math.nan
+        return float(np.mean(learned_table == oracle_table))
 
     def _trace_examples(
         self,
         strings: Sequence[list[str]],
+        deduplicate_transitions: bool = True,
     ) -> list[tuple[np.ndarray, np.ndarray]]:
         examples: list[tuple[np.ndarray, np.ndarray]] = []
+        seen_pairs: set[tuple[int, int]] = set()
         for symbols in strings:
             state = self.task.dfa.start_state
             for symbol in symbols:
                 next_state = self.task.dfa.step(state, symbol)
                 state_idx = self.state_to_idx[state]
                 input_idx = self.symbol_to_idx[symbol]
+                if deduplicate_transitions:
+                    pair = (state_idx, input_idx)
+                    if pair in seen_pairs:
+                        state = next_state
+                        continue
+                    seen_pairs.add(pair)
                 target_idx = self.state_to_idx[next_state]
                 phi = self.encoder.encode(
                     self.state_codebook[state_idx],
@@ -307,6 +349,9 @@ class BioLogicSequenceLearner:
         return examples
 
     def _transition_step(self, state_idx: int, input_idx: int) -> int:
+        return int(self._transition_table()[state_idx, input_idx])
+
+    def _transition_step_uncached(self, state_idx: int, input_idx: int) -> int:
         proposal = self.writer.propose(
             self.state_codebook[state_idx],
             self.input_codebook[input_idx],
@@ -317,7 +362,102 @@ class BioLogicSequenceLearner:
         pred_idx, _ = self.register.cleanup(proposal)
         return pred_idx
 
-    def _valid_next_symbol_score(self, current_state_idx: int, true_next_idx: int) -> float:
+    def _transition_table(self) -> np.ndarray:
+        if self._transition_table_cache is None:
+            table = np.empty(
+                (self.task.dfa.num_states, len(self.task.alphabet)),
+                dtype=int,
+            )
+            for state_idx in range(self.task.dfa.num_states):
+                for input_idx in range(len(self.task.alphabet)):
+                    table[state_idx, input_idx] = self._transition_step_uncached(
+                        state_idx,
+                        input_idx,
+                    )
+            self._transition_table_cache = table
+        return self._transition_table_cache
+
+    def _oracle_transition_table(self) -> np.ndarray:
+        if self._oracle_transition_table_cache is None:
+            table = np.empty(
+                (self.task.dfa.num_states, len(self.task.alphabet)),
+                dtype=int,
+            )
+            for state_idx, state in self.idx_to_state.items():
+                for symbol, input_idx in self.symbol_to_idx.items():
+                    next_state = self.task.dfa.step(state, symbol)
+                    table[state_idx, input_idx] = self.state_to_idx[next_state]
+            self._oracle_transition_table_cache = table
+        return self._oracle_transition_table_cache
+
+    def _accept_indices(self) -> set[int]:
+        return {
+            idx
+            for idx, state in self.idx_to_state.items()
+            if state in self.task.dfa.accept_states
+        }
+
+    def _accept_mask(self) -> np.ndarray:
+        mask = np.zeros(self.task.dfa.num_states, dtype=bool)
+        for idx in self._accept_indices():
+            mask[idx] = True
+        return mask
+
+    def _encoded_groups(
+        self,
+        strings: Sequence[list[str]],
+    ) -> dict[int, np.ndarray]:
+        cache_key = id(strings)
+        cached = self._encoded_string_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        grouped: dict[int, list[list[int]]] = {}
+        for symbols in strings:
+            length = len(symbols)
+            grouped.setdefault(length, []).append(
+                [self.symbol_to_idx[symbol] for symbol in symbols]
+            )
+        encoded = {
+            length: np.asarray(values, dtype=int)
+            for length, values in grouped.items()
+        }
+        self._encoded_string_cache[cache_key] = encoded
+        return encoded
+
+    def _valid_next_score_table(self, learned_table: np.ndarray) -> np.ndarray:
+        oracle_table = self._oracle_transition_table()
+        num_states = self.task.dfa.num_states
+        scores = np.zeros((num_states, num_states), dtype=float)
+        for state_idx in range(num_states):
+            for next_idx in range(num_states):
+                valid = oracle_table[state_idx] == next_idx
+                predicted = learned_table[state_idx] == next_idx
+                union = valid | predicted
+                if not np.any(union):
+                    scores[state_idx, next_idx] = 1.0
+                else:
+                    scores[state_idx, next_idx] = (
+                        np.count_nonzero(valid & predicted) / np.count_nonzero(union)
+                    )
+        return scores
+
+    def _rollout_final_idx(
+        self,
+        transition_table: np.ndarray,
+        start_idx: int,
+        symbols: Sequence[str],
+    ) -> int:
+        current_idx = start_idx
+        for symbol in symbols:
+            current_idx = int(transition_table[current_idx, self.symbol_to_idx[symbol]])
+        return current_idx
+
+    def _valid_next_symbol_score_from_table(
+        self,
+        transition_table: np.ndarray,
+        current_state_idx: int,
+        true_next_idx: int,
+    ) -> float:
         valid_symbols = {
             symbol
             for symbol in self.task.alphabet
@@ -329,7 +469,7 @@ class BioLogicSequenceLearner:
         predicted_symbols = set()
         for symbol in self.task.alphabet:
             input_idx = self.symbol_to_idx[symbol]
-            if self._transition_step(current_state_idx, input_idx) == true_next_idx:
+            if int(transition_table[current_state_idx, input_idx]) == true_next_idx:
                 predicted_symbols.add(symbol)
         if not valid_symbols and not predicted_symbols:
             return 1.0

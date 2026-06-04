@@ -177,7 +177,14 @@ def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
         f"Running experiment 5: descriptor/payload separation ({len(conditions)} seeds, jobs={jobs})..."
     )
     rows: list[Row] = [
-        row for group in parallel_map(_run_seed, conditions, jobs=jobs) for row in group
+        row
+        for group in parallel_map(
+            _run_seed,
+            conditions,
+            jobs=jobs,
+            progress_label="Exp05 descriptor/payload",
+        )
+        for row in group
     ]
 
     df: pd.DataFrame = pd.DataFrame(rows)

@@ -64,7 +64,12 @@ def run_experiment(quick: bool = False, jobs: int | None = 1) -> pd.DataFrame:
     print(
         f"Running experiment 1: transition accuracy ({len(conditions)} conditions, jobs={jobs})..."
     )
-    rows: list[Row] = parallel_map(_run_condition, conditions, jobs=jobs)
+    rows: list[Row] = parallel_map(
+        _run_condition,
+        conditions,
+        jobs=jobs,
+        progress_label="Exp01 transition accuracy",
+    )
     df: pd.DataFrame = pd.DataFrame(rows)
     csv_path = save_csv(df, "exp01_transition_accuracy.csv")
     figure_paths: list[Path] = plot_transition_accuracy(df)

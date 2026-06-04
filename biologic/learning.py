@@ -242,7 +242,27 @@ class LearnedAssociativeTransition:
         features = np.asarray(phi, dtype=float)
         if features.shape != (self.feature_dim,):
             raise ValueError("phi has wrong shape")
-        raw = self.W @ features
+        active = self._sparse_feature_indices(features)
+        raw = self._raw_checked(features, active)
+        return raw
+
+    def _sparse_feature_indices(self, features: np.ndarray) -> np.ndarray | None:
+        """Return active feature indices when a dense matrix multiply is wasteful."""
+        active = np.flatnonzero(features)
+        sparse_limit = max(1, min(16, features.size // 2))
+        if 0 < active.size <= sparse_limit:
+            return active
+        return None
+
+    def _raw_checked(
+        self,
+        features: np.ndarray,
+        active: np.ndarray | None,
+    ) -> np.ndarray:
+        if active is None:
+            raw = self.W @ features
+        else:
+            raw = self.W[:, active] @ features[active]
         if self.use_bias:
             raw = raw + self.bias
         return raw
@@ -300,6 +320,7 @@ class LearnedAssociativeTransition:
             raise ValueError("target_state_vec has wrong shape")
         if self.weight_decay:
             self.W *= 1.0 - self.weight_decay
+        active = self._sparse_feature_indices(features)
 
         if self.update_rule in {"hebbian", "three_factor"}:
             update_vec = target
@@ -307,7 +328,7 @@ class LearnedAssociativeTransition:
             prediction = (
                 np.asarray(predicted_vec, dtype=float)
                 if predicted_vec is not None
-                else sign(self.raw(features)).astype(float)
+                else sign(self._raw_checked(features, active)).astype(float)
             )
             error = target - prediction
             if self.update_rule == "perceptron":
@@ -315,11 +336,14 @@ class LearnedAssociativeTransition:
             else:
                 update_vec = error
 
-        delta = self.learning_rate * modulatory_signal * np.outer(update_vec, features)
-        self.W += delta
+        scale = self.learning_rate * modulatory_signal
+        if active is None:
+            self.W += scale * np.outer(update_vec, features)
+        else:
+            self.W[:, active] += scale * update_vec[:, np.newaxis] * features[active]
         if self.clip_value is not None:
             np.clip(self.W, -self.clip_value, self.clip_value, out=self.W)
-        error_after = target - sign(self.raw(features)).astype(float)
+        error_after = target - sign(self._raw_checked(features, active)).astype(float)
         return float(np.mean(np.abs(error_after)))
 
 

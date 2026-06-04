@@ -969,6 +969,12 @@ def _main_rows(df: pd.DataFrame) -> pd.DataFrame:
     return _rows_for(df, "row_type", "main")
 
 
+def _regime_rows(df: pd.DataFrame, regime: str) -> pd.DataFrame:
+    if "regime" not in df.columns:
+        return df
+    return _rows_for(df, "regime", regime)
+
+
 def plot_fig12(df: pd.DataFrame, fmt: str) -> list[Path]:
     stem = "fig12_tomita_generalization"
     cols = [
@@ -981,8 +987,11 @@ def plot_fig12(df: pd.DataFrame, fmt: str) -> list[Path]:
     if not _required(df, cols, stem):
         return []
     main = _filter_rows(
-        _main_rows(df),
-        lambda row: str(row.get("grammar_name", "")).startswith("tomita"),
+        _regime_rows(_main_rows(df), "full_transition_exposure"),
+        lambda row: (
+            str(row.get("grammar_name", "")).startswith("tomita")
+            and row.get("output_mode") == "dense"
+        ),
     )
     if main.empty:
         print(f"Warning: {stem} skipped; no Tomita rows.")
@@ -1023,8 +1032,11 @@ def plot_fig13(df: pd.DataFrame, fmt: str) -> list[Path]:
         df,
         lambda row: (
             row.get("row_type") == "length"
+            and row.get("regime", "full_transition_exposure")
+            == "full_transition_exposure"
             and row.get("feature_mode") == "exact_pair"
             and row.get("register_type") == "nearest"
+            and row.get("output_mode") == "dense"
         ),
     )
     if length_rows.empty:
@@ -1087,7 +1099,10 @@ def plot_fig15(df: pd.DataFrame, fmt: str) -> list[Path]:
     ]
     if not _required(df, cols, stem):
         return []
-    topk_rows = _rows_for(df, "row_type", "topk")
+    topk_rows = _regime_rows(
+        _rows_for(df, "row_type", "topk"),
+        "full_transition_exposure",
+    )
     if topk_rows.empty:
         print(f"Warning: {stem} skipped; no top-k rows.")
         return []
@@ -1121,17 +1136,27 @@ def plot_fig16(exp07: pd.DataFrame, exp06: pd.DataFrame, fmt: str) -> list[Path]
         return []
     rows: list[Record] = []
     main = _main_rows(exp07)
-    if not main.empty:
+    limited = _regime_rows(main, "limited_string_exposure")
+    structured = limited if not limited.empty else main
+    structured = _filter_rows(
+        structured,
+        lambda row: (
+            row.get("feature_mode") == "exact_pair"
+            and row.get("register_type") == "nearest"
+            and row.get("output_mode") == "dense"
+        ),
+    )
+    if not structured.empty:
         rows.append(
             {
                 "condition": "Exp07 structured seen",
-                "accuracy": _mean_metric(main, "seen_transition_accuracy"),
+                "accuracy": _mean_metric(structured, "seen_transition_accuracy"),
             }
         )
         rows.append(
             {
                 "condition": "Exp07 structured unseen",
-                "accuracy": _mean_metric(main, "unseen_transition_accuracy"),
+                "accuracy": _mean_metric(structured, "unseen_transition_accuracy"),
             }
         )
     if not exp06.empty:
@@ -1385,7 +1410,10 @@ def generate_summary_table(data: dict[str, pd.DataFrame]) -> str:
 
     exp07 = data.get("exp07_structured_grammar_learning.csv", pd.DataFrame())
     if not exp07.empty:
-        main = _main_rows(exp07)
+        main = _regime_rows(
+            _main_rows(exp07),
+            "full_transition_exposure",
+        )
         exact = _filter_rows(
             main,
             lambda row: (

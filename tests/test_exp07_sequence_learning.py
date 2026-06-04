@@ -1,7 +1,16 @@
 import numpy as np
+import pandas as pd
 
 from biologic.grammars import even_ones_task, strings_covering_transitions
 from biologic.sequence_eval import BioLogicSequenceLearner, MaskedNearestRegister
+from experiments.exp07_structured_grammar_learning import (
+    CSV_COLUMNS,
+    _base_row,
+    _completed_condition_keys,
+    _condition_key,
+    _conditions,
+    _remaining_conditions,
+)
 
 
 def _trained_even_ones() -> tuple[BioLogicSequenceLearner, list[list[str]]]:
@@ -75,3 +84,28 @@ def test_masked_topk_cleanup_reaches_high_accuracy_with_sufficient_k() -> None:
     mask = np.ones(learner.state_dim, dtype=bool)
     recovered_idx, _ = masked.cleanup_masked(proposal, mask)
     assert recovered_idx == 0
+
+
+def test_exp07_continue_skips_completed_condition(tmp_path) -> None:
+    condition = _conditions("quick")[0]
+    task = even_ones_task()
+    if condition.task_name != task.name:
+        from biologic.grammars import task_by_name
+
+        task = task_by_name(condition.task_name)
+    row = {
+        **_base_row(condition, task, train_coverage=1.0, test_coverage=1.0),
+        "row_type": "main",
+        "split": "aggregate",
+        "length": np.nan,
+        "test_string_accuracy": 1.0,
+    }
+    csv_path = tmp_path / "exp07.csv"
+    pd.DataFrame(
+        [{column: row.get(column, np.nan) for column in CSV_COLUMNS}]
+    ).to_csv(csv_path, index=False)
+
+    completed = _completed_condition_keys(csv_path)
+
+    assert _condition_key(condition) in completed
+    assert condition not in _remaining_conditions([condition], completed)
