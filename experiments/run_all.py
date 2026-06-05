@@ -12,6 +12,7 @@ from experiments import (
     exp05_descriptor_payload,
     exp06_learned_transitions,
     exp07_structured_grammar_learning,
+    exp08_rl_transition_learning,
 )
 
 
@@ -38,6 +39,7 @@ def main() -> None:
     exp05_descriptor_payload.run_experiment(quick=quick, jobs=args.jobs)
     exp06_learned_transitions.run_experiment(quick=quick, jobs=args.jobs)
     exp07_structured_grammar_learning.run_experiment(quick=quick, jobs=args.jobs)
+    exp08_rl_transition_learning.run_experiment(quick=quick, jobs=args.jobs)
 
 
 if __name__ == "__main__":

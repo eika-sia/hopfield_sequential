@@ -40,6 +40,7 @@ Important core modules:
 | `biologic/register.py` | Nearest-attractor and Hopfield cleanup. |
 | `biologic/transition.py` | Constructed exact and sparse transition mechanisms. |
 | `biologic/learning.py` | Local associative transition learning from state-input demonstrations. |
+| `biologic/rl_transition.py` | Reward-modulated transition learning from scalar feedback. |
 | `biologic/grammars.py` | DFA-backed structured grammar tasks: custom/MLReg-style tasks, Tomita grammars, and Reber grammar. |
 | `biologic/sequence_eval.py` | Autonomous learned-state rollout, string-level evaluation, and masked top-k cleanup. |
 | `biologic/descriptors.py` | Descriptor/payload protocol witness helpers. |
@@ -56,6 +57,7 @@ Important core modules:
 | Exp05 descriptor/payload witness | `experiments.exp05_descriptor_payload` | `results/csv/exp05_descriptor_payload.csv` |
 | Exp06 learned transitions | `experiments.exp06_learned_transitions` | `results/csv/exp06_learned_transitions.csv` |
 | Exp07 structured grammar learning | `experiments.exp07_structured_grammar_learning` | `results/csv/exp07_structured_grammar_learning.csv` |
+| Exp08 RL transition learning | `experiments.exp08_rl_transition_learning` | `results/csv/exp08_rl_transition_learning.csv` |
 
 ## Running Tests
 
@@ -66,7 +68,7 @@ pytest
 For the grammar and learning code only:
 
 ```bash
-pytest tests/test_learning.py tests/test_grammars.py tests/test_exp07_sequence_learning.py
+pytest tests/test_learning.py tests/test_grammars.py tests/test_exp07_sequence_learning.py tests/test_exp08_rl_transition_learning.py
 ```
 
 ## Running Experiments
@@ -101,10 +103,15 @@ python -m experiments.exp06_learned_transitions --full --jobs 0
 python -m experiments.exp07_structured_grammar_learning --quick --jobs 0
 python -m experiments.exp07_structured_grammar_learning --full --jobs 0
 python -m experiments.exp07_structured_grammar_learning --full --jobs 0 --continue
+
+python -m experiments.exp08_rl_transition_learning --quick --jobs 0
+python -m experiments.exp08_rl_transition_learning --full --jobs 0
+python -m experiments.exp08_rl_transition_learning --full --jobs 0 --continue
 ```
 
 All experiment runners print progress with completed conditions, percent, throughput, and ETA.
 For Exp07, `--continue` resumes from the existing CSV by skipping completed main rows and appending the missing conditions.
+Exp08 writes a single all-row CSV at `results/csv/exp08_rl_transition_learning.csv` and plots under `results/figures/exp08_rl_transition_learning/`.
 
 ## Background Runs
 

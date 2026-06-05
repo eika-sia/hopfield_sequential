@@ -34,6 +34,7 @@ CSV_NAMES: dict[str, str] = {
     "exp05": "exp05_descriptor_payload.csv",
     "exp06": "exp06_learned_transitions.csv",
     "exp07": "exp07_structured_grammar_learning.csv",
+    "exp08": "exp08_rl_transition_learning.csv",
 }
 
 
@@ -2224,6 +2225,285 @@ def analyze_exp07(csv_dir: Path, out_dir: Path) -> AnalysisResult:
     return result
 
 
+def analyze_exp08(csv_dir: Path, out_dir: Path) -> AnalysisResult:
+    source = csv_dir / CSV_NAMES["exp08"]
+    raw_df = load_csv(source)
+    result = AnalysisResult(
+        "exp08",
+        "Exp08: RL transition learning",
+        raw_df is not None,
+        source,
+    )
+    if raw_df is None:
+        return result
+    if "row_type" not in raw_df.columns:
+        warn("Exp08 skipped; CSV has no row_type column.")
+        return result
+    df = _filter_equal(raw_df, "row_type", "summary")
+    if df.empty:
+        warn("Exp08 skipped; CSV has no row_type=summary rows.")
+        return result
+
+    required = [
+        "seed",
+        "grammar",
+        "condition",
+        "cleanup",
+        "feature_type",
+        "state_dim",
+        "num_states",
+        "feature_dim",
+        "episodes",
+        "eta",
+        "alpha",
+        "gamma",
+        "lambda",
+        "noise_start",
+        "noise_end",
+        "write_fraction",
+        "final_test_accuracy",
+        "final_return",
+        "state_tracking_accuracy",
+        "transition_accuracy",
+        "seen_transition_accuracy",
+        "unseen_transition_accuracy",
+        "episodes_to_80",
+        "episodes_to_90",
+    ]
+    if not _has_required(df, required, "Exp08"):
+        return result
+
+    curves = _filter_equal(raw_df, "row_type", "learning_curve")
+    transitions = _filter_equal(raw_df, "row_type", "transition_eval")
+
+    by_condition = mean_sem(
+        df,
+        ["condition", "cleanup", "feature_type"],
+        "final_test_accuracy",
+    )
+    by_grammar = mean_sem(
+        df,
+        ["grammar", "condition", "cleanup", "feature_type"],
+        "final_test_accuracy",
+    )
+    tracking_by_condition = mean_sem(
+        df,
+        ["condition", "cleanup", "feature_type"],
+        "state_tracking_accuracy",
+    )
+    transition_by_condition = mean_sem(
+        df,
+        ["condition", "cleanup", "feature_type"],
+        "transition_accuracy",
+    )
+    seen_by_condition = mean_sem(
+        df,
+        ["condition", "cleanup", "feature_type"],
+        "seen_transition_accuracy",
+    )
+    unseen_by_condition = mean_sem(
+        df,
+        ["condition", "cleanup", "feature_type"],
+        "unseen_transition_accuracy",
+    )
+    sparse_by_write = mean_sem(
+        _filter_equal(df, "condition", "sparse_terminal_rl"),
+        ["cleanup", "write_fraction"],
+        "final_test_accuracy",
+    )
+
+    curve_summary = pd.DataFrame()
+    if curves is not None and _has_required(
+        curves,
+        [
+            "condition",
+            "cleanup",
+            "feature_type",
+            "episode",
+            "test_accuracy",
+            "state_tracking_accuracy",
+            "transition_accuracy",
+        ],
+        "Exp08 curves",
+    ):
+        curve_summary = mean_sem(
+            curves,
+            ["condition", "cleanup", "feature_type", "episode"],
+            "test_accuracy",
+        )
+
+    transition_eval_summary = pd.DataFrame()
+    if transitions is not None and _has_required(
+        transitions,
+        [
+            "condition",
+            "cleanup",
+            "feature_type",
+            "seen_in_training",
+            "correct",
+        ],
+        "Exp08 transition eval",
+    ):
+        transition_eval = transitions.copy()
+        transition_eval["correct_float"] = transition_eval["correct"].map(
+            lambda value: 1.0 if _to_bool(value) else 0.0
+        )
+        transition_eval_summary = mean_sem(
+            transition_eval,
+            ["condition", "cleanup", "feature_type", "seen_in_training"],
+            "correct_float",
+        )
+
+    summary_path = out_dir / "exp08_rl_transition_learning_summary.csv"
+    result.summary_path = _write_summary(
+        summary_path,
+        [
+            _summary_frame(by_condition, "final_accuracy_by_condition"),
+            _summary_frame(by_grammar, "final_accuracy_by_grammar"),
+            _summary_frame(tracking_by_condition, "state_tracking_by_condition"),
+            _summary_frame(transition_by_condition, "transition_accuracy_by_condition"),
+            _summary_frame(seen_by_condition, "seen_transition_accuracy_by_condition"),
+            _summary_frame(unseen_by_condition, "unseen_transition_accuracy_by_condition"),
+            _summary_frame(sparse_by_write, "sparse_terminal_rl_by_write_fraction"),
+            _summary_frame(curve_summary, "learning_curve_test_accuracy"),
+            _summary_frame(transition_eval_summary, "transition_eval_seen_unseen_rows"),
+        ],
+    )
+
+    supervised = _mean_for_filters(
+        df,
+        "final_test_accuracy",
+        {"condition": "supervised_baseline", "feature_type": "exact_pair"},
+    )
+    state_shaped = _mean_for_filters(
+        df,
+        "final_test_accuracy",
+        {"condition": "state_shaped_rl", "feature_type": "exact_pair"},
+    )
+    terminal = _mean_for_filters(
+        df,
+        "final_test_accuracy",
+        {"condition": "terminal_rl", "feature_type": "exact_pair"},
+    )
+    sparse = _mean_for_filters(
+        df,
+        "final_test_accuracy",
+        {"condition": "sparse_terminal_rl", "feature_type": "exact_pair"},
+    )
+    state_shaped_transition = _mean_for_filters(
+        df,
+        "transition_accuracy",
+        {"condition": "state_shaped_rl", "feature_type": "exact_pair"},
+    )
+    terminal_transition = _mean_for_filters(
+        df,
+        "transition_accuracy",
+        {"condition": "terminal_rl", "feature_type": "exact_pair"},
+    )
+    state_shaped_tracking = _mean_for_filters(
+        df,
+        "state_tracking_accuracy",
+        {"condition": "state_shaped_rl", "feature_type": "exact_pair"},
+    )
+    sparse_030, sparse_030_actual = _mean_at(
+        df,
+        "final_test_accuracy",
+        {"condition": "sparse_terminal_rl", "feature_type": "exact_pair"},
+        "write_fraction",
+        0.30,
+    )
+    sparse_050, sparse_050_actual = _mean_at(
+        df,
+        "final_test_accuracy",
+        {"condition": "sparse_terminal_rl", "feature_type": "exact_pair"},
+        "write_fraction",
+        0.50,
+    )
+    hashed_state_shaped = _mean_for_filters(
+        df,
+        "final_test_accuracy",
+        {"condition": "state_shaped_rl", "feature_type": "hashed_pair"},
+    )
+    mean_seen = _mean_metric(df, "seen_transition_accuracy")
+    mean_unseen = _mean_metric(df, "unseen_transition_accuracy")
+
+    report_path = out_dir / "exp08_rl_transition_learning_report.md"
+    lines: list[str] = ["## Exp08: RL transition learning", ""]
+    lines.extend(
+        [
+            "- Exp08 removes the omniscient transition-vector teacher in RL conditions.",
+            "- The transition writer is updated from scalar TD error and the executed next-state basin; hidden DFA states are used only for scalar state-shaped reward and evaluation.",
+            "- The final accept/reject readout is supervised from the episode label; the transition writer is not given true next-state vectors in RL conditions.",
+            f"- supervised exact-pair final test accuracy: {_fmt_optional(supervised)}.",
+            f"- state-shaped RL exact-pair final test accuracy: {_fmt_optional(state_shaped)}.",
+            f"- terminal-only RL exact-pair final test accuracy: {_fmt_optional(terminal)}.",
+            f"- sparse terminal RL exact-pair final test accuracy: {_fmt_optional(sparse)}.",
+            f"- state-shaped RL exact-pair transition accuracy: {_fmt_optional(state_shaped_transition)}.",
+            f"- terminal-only RL exact-pair transition accuracy: {_fmt_optional(terminal_transition)}.",
+            f"- seen/unseen transition accuracy across Exp08: seen={_fmt_optional(mean_seen)}, unseen={_fmt_optional(mean_unseen)}.",
+        ]
+    )
+    _add_table(lines, "Final accuracy by condition", by_condition, max_rows=80)
+    _add_table(lines, "Grammar-level final accuracy", by_grammar, max_rows=80)
+    _add_table(lines, "State tracking by condition", tracking_by_condition, max_rows=80)
+    _add_table(lines, "Transition accuracy by condition", transition_by_condition, max_rows=80)
+    _add_table(lines, "Seen transition accuracy by condition", seen_by_condition, max_rows=80)
+    _add_table(lines, "Unseen transition accuracy by condition", unseen_by_condition, max_rows=80)
+    _add_table(lines, "Sparse terminal RL by write fraction", sparse_by_write, max_rows=40)
+    _add_table(lines, "Learning curve test accuracy", curve_summary, max_rows=60)
+    report_path.write_text(
+        "\n".join(["# Exp08 RL Transition Learning Report", "", *lines]) + "\n",
+        encoding="utf-8",
+    )
+
+    result.markdown_lines = lines
+    result.stdout_line = (
+        f"Exp08: supervised={_fmt_optional(supervised)}, "
+        f"state-shaped RL={_fmt_optional(state_shaped)}, "
+        f"terminal RL={_fmt_optional(terminal)}"
+    )
+    result.paper_values = [
+        f"Exp08 supervised exact-pair final test accuracy: {_fmt_optional(supervised)}",
+        f"Exp08 state-shaped RL exact-pair final test accuracy: {_fmt_optional(state_shaped)}",
+        f"Exp08 terminal-only RL exact-pair final test accuracy: {_fmt_optional(terminal)}",
+        f"Exp08 sparse terminal RL exact-pair final test accuracy: {_fmt_optional(sparse)}",
+        f"Exp08 state-shaped RL exact-pair state-tracking accuracy: {_fmt_optional(state_shaped_tracking)}",
+        f"Exp08 state-shaped RL exact-pair transition accuracy: {_fmt_optional(state_shaped_transition)}",
+        f"Exp08 terminal-only RL exact-pair transition accuracy: {_fmt_optional(terminal_transition)}",
+        f"Exp08 sparse terminal RL accuracy at write_fraction=0.30: {_fmt_with_actual(sparse_030, sparse_030_actual, 0.30)}",
+        f"Exp08 sparse terminal RL accuracy at write_fraction=0.50: {_fmt_with_actual(sparse_050, sparse_050_actual, 0.50)}",
+        f"Exp08 hashed state-shaped RL final test accuracy: {_fmt_optional(hashed_state_shaped)}",
+        f"Exp08 seen/unseen transition accuracy: seen={_fmt_optional(mean_seen)}, unseen={_fmt_optional(mean_unseen)}",
+    ]
+    result.latex_rows = [
+        (
+            "Exp08",
+            "Supervised transition baseline",
+            _fmt_optional(supervised),
+            "Upper bound with explicit next-state demonstrations",
+        ),
+        (
+            "Exp08",
+            "State-shaped RL final accuracy",
+            _fmt_optional(state_shaped),
+            "Scalar state reward can shape transition acquisition",
+        ),
+        (
+            "Exp08",
+            "Terminal-only RL final accuracy",
+            _fmt_optional(terminal),
+            "Delayed scalar reward is harder than dense state feedback",
+        ),
+        (
+            "Exp08",
+            "State-shaped RL transition accuracy",
+            _fmt_optional(state_shaped_transition),
+            "Evaluation-only hidden DFA metrics reveal learned transition structure",
+        ),
+    ]
+    return result
+
+
 def results_cheat_sheet() -> list[str]:
     return [
         "| Experiment | Main result | Interpretation | Best figure/table |",
@@ -2235,6 +2515,7 @@ def results_cheat_sheet() -> list[str]:
         "| Exp05 | Protocol cases succeed. | Descriptor/payload distinction is operational. | fig05 and Exp05 summary |",
         "| Exp06 | Learned exact-pair transitions acquire demonstrated FSM associations. | Transition maps can be learned from demonstrations but inherit interface and cleanup capacity limits. | fig08-fig11 and Exp06 summary |",
         "| Exp07 | Structured grammar tasks test length generalization once DFA transitions are covered. | Reusable transition structure can support unseen strings, unlike random FSM tables. | fig12-fig16 and Exp07 report |",
+        "| Exp08 | Scalar reward can shape transition writers, but delayed terminal feedback is harder. | Removing the transition-vector teacher exposes exploration and credit-assignment limits. | Exp08 report and summary |",
     ]
 
 
@@ -2247,6 +2528,7 @@ def collect_results(csv_dir: Path, out_dir: Path) -> list[AnalysisResult]:
         analyze_exp05,
         analyze_exp06,
         analyze_exp07,
+        analyze_exp08,
     ]
     return [analysis(csv_dir, out_dir) for analysis in analyses]
 
